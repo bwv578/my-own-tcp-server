@@ -1,0 +1,12 @@
+use std::net::TcpStream;
+use crate::protocols::protocol::Protocol;
+
+pub struct Http {
+
+}
+
+impl Protocol for Http {
+    fn handle_connection(&mut self, stream: TcpStream) {
+        TcpStream::from(stream);
+    }
+}

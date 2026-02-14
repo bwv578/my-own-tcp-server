@@ -4,3 +4,5 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+futures = { version = "0.3.31", features = ["thread-pool"] }
+uuid = { version = "1.21.0", features = ["v4"] }
