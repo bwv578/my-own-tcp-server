@@ -6,7 +6,8 @@ pub struct Http {
 }
 
 impl Protocol for Http {
-    fn handle_connection(&mut self, stream: TcpStream) {
-        TcpStream::from(stream);
+    fn handle_connection(&self, stream: TcpStream) {
+        //TcpStream::from(stream);
+        todo!()
     }
 }
