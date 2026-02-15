@@ -1,13 +1,12 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
+use crate::server::server::Task;
 use crate::server::worker::Worker;
 
 pub struct ThreadPool {
     task_queue: Arc<Mutex<VecDeque<Task>>>,
     workers: Vec<Worker>,
 }
-
-pub type Task = Box<dyn FnOnce() + Send + 'static>;
 
 impl ThreadPool {
     pub fn new(size:u16) -> Self {

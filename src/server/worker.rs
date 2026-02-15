@@ -4,7 +4,7 @@ use std::thread;
 use std::thread::{sleep, JoinHandle};
 use std::time::Duration;
 use uuid::Uuid;
-use crate::server::thread_pool::Task;
+use crate::server::server::Task;
 
 pub struct Worker {
     handle: JoinHandle<()>,
