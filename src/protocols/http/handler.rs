@@ -1,4 +1,5 @@
 use crate::protocols::http::method::Method;
+use crate::protocols::http::request::Request;
 use crate::protocols::protocol::Action;
 
 pub struct Handler {
@@ -13,8 +14,8 @@ impl Handler {
         Self { method, endpoint:String::from(endpoint), action }
     }
 
-    pub fn execute(&mut self) {
-        (*self.action)();
+    pub fn execute(&self, request:Request) {
+        (*self.action)(request);
     }
 
 }
