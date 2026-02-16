@@ -25,13 +25,23 @@ impl Server {
         TcpListener::bind(listen_to).unwrap()
     }
 
+    fn log_error(){
+        todo!()
+    }
+
     pub fn start(&mut self) {
         let listener:TcpListener = Self::listen("0.0.0.0", self.port);
 
         for stream in listener.incoming() {
             let protocol = Arc::clone(&self.protocol);
             let task:Task = Box::new(move || {
-                protocol.handle_connection(stream.unwrap());
+                match protocol.handle_connection(stream.unwrap()) {
+                    Ok(_) => {}, // todo log_connection ?
+                    Err(e) => {
+                        println!("Error handling connection: {:?}", e);
+                        Self::log_error();
+                    }
+                }
             });
             self.thread_pool.push_task(task);
         }

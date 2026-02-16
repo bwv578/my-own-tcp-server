@@ -245,6 +245,7 @@ name = "server"
 version = "0.1.0"
 dependencies = [
  "form_urlencoded",
+ "log",
  "serde",
  "serde_json",
  "uuid",

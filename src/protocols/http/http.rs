@@ -1,20 +1,23 @@
 use std::collections::{HashMap};
 use std::io;
 use std::io::{BufRead, BufReader, Error, Read, Write};
-use std::net::TcpStream;
+use std::net::{TcpStream};
 use serde_json::Value;
 use crate::protocols::http::handler::{Handler};
+use crate::protocols::http::http_request::HttpRequest;
+use crate::protocols::http::http_response::HttpResponse;
 use crate::protocols::http::method::Method;
-use crate::protocols::http::request::Request;
 use crate::protocols::http::util::decode_query;
-use crate::protocols::protocol::{Action, Protocol};
+use crate::protocols::protocol::{Protocol};
 
 pub struct Http {
     handlers:HashMap<(Method, String), Handler>
 }
 
+pub type HttpAction = Box<dyn Fn(HttpRequest, HttpResponse) -> Result<(), Error> + Send + Sync>;
+
 impl Protocol for Http {
-    fn handle_connection(&self, mut stream: TcpStream) {
+    fn handle_connection(&self, mut stream: TcpStream) -> Result<(), io::Error> {
         let mut buf_reader = BufReader::new(&mut stream);
         let mut query_params:Value = Value::Object(serde_json::Map::new());
 
@@ -24,8 +27,8 @@ impl Protocol for Http {
                 stream.write_all(b"HTTP/1.1 400 Bad Request\r\n\
                 Content-Length: 11\r\n\
                 Content-Type: text/plain\r\n"
-                ).unwrap();
-                return;
+                )?;
+                return Ok(());
             }
         };
 
@@ -49,8 +52,8 @@ impl Protocol for Http {
                 stream.write_all(b"HTTP/1.1 400 Bad Request\r\n\
                 Content-Length: 11\r\n\
                 Content-Type: text/plain\r\n"
-                ).unwrap();
-                return;
+                )?;
+                return Ok(());
             },
             _ => Value::Null
         };
@@ -64,21 +67,23 @@ impl Protocol for Http {
         match self.handlers.get(&request_line) {
             Some(handler) => {
                 handler.execute(
-                    Request::new(
+                    HttpRequest::new(
                         request_line.0, request_line.1, header,
-                        body_params, query_params, stream
-                    )
-                );
+                        query_params, body_params, stream.peer_addr()?
+                    ),
+                    HttpResponse::new(stream, 200, HashMap::new())
+                )?;
             },
             _ => { // 핸들러 없음 => 404
                 stream.write_all(b"HTTP/1.1 404 Not Found\r\n\
                 Content-Length: 10\r\n\
                 Content-Type: text/plain\r\n\
                 \r\n\
-                Not Found").unwrap();
-                return;
+                Not Found")?;
             }
         }
+
+        Ok(())
     }
 }
 
@@ -162,7 +167,9 @@ impl Http {
         }
     }
 
-    pub fn handle(&mut self, method: Method, endpoint:&str, action: fn(Request)) {
+    pub fn handle(&mut self, method: Method, endpoint:&str,
+                  action: fn(HttpRequest, HttpResponse) -> Result<(), Error>)
+    {
         self.handlers.insert(
             (method.clone(), endpoint.to_string().clone()),
             Handler::new(method, &endpoint, Box::new(action))
