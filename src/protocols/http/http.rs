@@ -137,7 +137,8 @@ impl Http {
             let value = kv.get(1).unwrap_or(&String::new()).trim().to_string();
             header.insert(key, value);
         }
-        return header;
+
+        header
     }
 
     fn parse_body(reader:&mut BufReader<&mut TcpStream>, content_length:usize, content_type:String)
