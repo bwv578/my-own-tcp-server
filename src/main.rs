@@ -1,6 +1,5 @@
+use std::fmt::format;
 use std::sync::Arc;
-use serde::Deserializer;
-use serde_json::Value;
 use crate::protocols::http::http::Http;
 use crate::protocols::http::method::Method;
 use crate::protocols::http::http_request::{HttpRequest};
@@ -13,6 +12,7 @@ mod server;
 fn main() {
     //test
     let mut proc = Http::new();
+    static CONTENT_ROOT: &str = "./examples";
 
     fn handle_hello_get(request:HttpRequest, mut response:HttpResponse) -> Result<(),std::io::Error> {
         response.write("HTTP/1.1 200 OK\r\n\
@@ -78,12 +78,46 @@ fn main() {
         Ok(())
     }
 
+    fn file_test_get(request: HttpRequest, mut response: HttpResponse) -> Result<(),std::io::Error> {
+        println!("try file {}", &format!("{}hello.html", CONTENT_ROOT));
+        Ok(response.write_file(
+            &format!("{}/hello.html", CONTENT_ROOT)
+        )?)
+    }
+
+    fn img_test_get(request: HttpRequest, mut response: HttpResponse) -> Result<(),std::io::Error> {
+        Ok(response.write_file(
+            &format!("{}/test.jpg", CONTENT_ROOT)
+        )?)
+    }
+
+    fn wildcard_test_img(request: HttpRequest, mut response: HttpResponse) -> Result<(),std::io::Error> {
+        print!("random image requested! : {}", &format!("{}{}", CONTENT_ROOT, request.endpoint));
+        Ok((response.write_file(
+            &format!("{}{}", CONTENT_ROOT, request.endpoint)
+        )?))
+    }
+
+    fn wildcard_test_file(request: HttpRequest, mut response: HttpResponse) -> Result<(),std::io::Error> {
+        Ok((response.write_file(
+            &format!("{}{}", CONTENT_ROOT, request.endpoint)
+        )?))
+    }
 
     proc.handle(Method::GET, "/hello/get", handle_hello_get);
     proc.handle(Method::POST, "/hello/post", handle_hello_post);
     proc.handle(Method::GET, "/test/get/hello", handle_test1_get);
     proc.handle(Method::POST, "/test/post/hello", handle_test1_post);
 
+    // file & image test
+    proc.handle(Method::GET, "/test/file/hello", file_test_get);
+    proc.handle(Method::GET, "/img/test.jpg", img_test_get);
+
+    // wildcard test
+    proc.handle(Method::GET, "/img/any/*", wildcard_test_img);
+    proc.handle(Method::GET, "/files/any/*", wildcard_test_file);
+
     let mut server = Server::new(Arc::new(proc), 80, 4);
     server.start();
+
 }

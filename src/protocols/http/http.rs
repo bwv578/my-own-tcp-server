@@ -11,7 +11,8 @@ use crate::protocols::http::util::decode_query;
 use crate::protocols::protocol::{Protocol};
 
 pub struct Http {
-    handlers:HashMap<(Method, String), Handler>
+    handlers:HashMap<(Method, String), Handler>,
+    content_root: String,
 }
 
 pub type HttpAction = Box<dyn Fn(HttpRequest, HttpResponse) -> Result<(), Error> + Send + Sync>;
@@ -58,12 +59,6 @@ impl Protocol for Http {
             _ => Value::Null
         };
 
-        // check
-        println!("request: {:?}, {}", request_line.0, request_line.1);
-        println!("query params: {:?}", query_params);
-        println!("header: {:?}", header);
-        println!("body params: {:?}", body_params);
-
         match self.handlers.get(&request_line) {
             Some(handler) => {
                 handler.execute(
@@ -74,12 +69,28 @@ impl Protocol for Http {
                     HttpResponse::new(stream, 200, HashMap::new())
                 )?;
             },
-            _ => { // 핸들러 없음 => 404
-                stream.write_all(b"HTTP/1.1 404 Not Found\r\n\
-                Content-Length: 10\r\n\
-                Content-Type: text/plain\r\n\
-                \r\n\
-                Not Found")?;
+
+            None => {
+                // 와일드카드 검색
+                match self.search_wildcard(&request_line.0, request_line.1.as_str()){
+                    Some(wildcard_handler) => {
+                        wildcard_handler.execute(
+                            HttpRequest::new(
+                                request_line.0, request_line.1, header,
+                                query_params, body_params, stream.peer_addr()?
+                            ),
+                            HttpResponse::new(stream, 200, HashMap::new())
+                        )?;
+                    },
+                    None => {
+                        // 핸들러 없음 => 404
+                        stream.write_all(b"HTTP/1.1 404 Not Found\r\n\
+                        Content-Length: 10\r\n\
+                        Content-Type: text/plain\r\n\
+                        \r\n\
+                        Not Found")?;
+                    }
+                }
             }
         }
 
@@ -89,7 +100,11 @@ impl Protocol for Http {
 
 impl Http {
     pub fn new() -> Self {
-        Self{ handlers: HashMap::new() }
+        Self{ handlers: HashMap::new(), content_root: String::from("./") }
+    }
+
+    pub fn set_content_root(&mut self, root: &str) {
+        self.content_root = format!("./{}", root);
     }
 
     fn parse_request_line(reader:&mut BufReader<&mut TcpStream>, params:&mut Value)
@@ -153,7 +168,7 @@ impl Http {
         reader.read_exact(&mut body)?;
         let body_str = String::from_utf8(body).unwrap();
 
-        match content_type.as_str() {
+        match content_type.to_lowercase().as_str() {
             "text/plain" => Ok(Some(Value::String(body_str))),
             "application/x-www-form-urlencoded" => Ok(None),
             "multipart/form-data" => Ok(None), // todo() 멀티파트 처리
@@ -165,6 +180,26 @@ impl Http {
                 "unknown content-type"
             ))
         }
+    }
+
+    fn search_wildcard(&self, method: &Method, endpoint:&str) -> Option<&Handler> {
+        let mut endpoint_vec = endpoint
+            .split('/')
+            .collect::<Vec<&str>>();
+
+        while endpoint_vec.len() > 0 {
+            endpoint_vec.remove(endpoint_vec.len() - 1);
+            let search = endpoint_vec.join("/") + "/*";
+            
+            match self.handlers.get( &(method.clone(), search) ){
+                Some(handler) => {
+                    return Some(handler)
+                },
+                None => { continue; }
+            }
+        }
+
+        None
     }
 
     pub fn handle(&mut self, method: Method, endpoint:&str,
