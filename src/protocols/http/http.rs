@@ -12,7 +12,6 @@ use crate::protocols::protocol::{Protocol};
 
 pub struct Http {
     handlers:HashMap<(Method, String), Handler>,
-    content_root: String,
 }
 
 pub type HttpAction = Box<dyn Fn(HttpRequest, HttpResponse) -> Result<(), Error> + Send + Sync>;
@@ -100,11 +99,7 @@ impl Protocol for Http {
 
 impl Http {
     pub fn new() -> Self {
-        Self{ handlers: HashMap::new(), content_root: String::from("./") }
-    }
-
-    pub fn set_content_root(&mut self, root: &str) {
-        self.content_root = format!("./{}", root);
+        Self{ handlers: HashMap::new()}
     }
 
     fn parse_request_line(reader:&mut BufReader<&mut TcpStream>, params:&mut Value)

@@ -5,8 +5,8 @@ use crate::protocols::http::http_request::{HttpRequest};
 use crate::protocols::http::http_response::HttpResponse;
 
 pub struct Handler {
-    method: Method,
-    endpoint: String,
+    pub method: Method,
+    pub endpoint: String,
     action: HttpAction
 }
 
