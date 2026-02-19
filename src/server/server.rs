@@ -4,7 +4,6 @@ use crate::protocols::protocol::Protocol;
 use crate::server::thread_pool::{ThreadPool};
 
 pub struct Server {
-    //protocol: Arc<dyn Protocol>,
     protocol: Arc<RwLock<dyn Protocol>>,
     port: u16,
     thread_pool: ThreadPool,
