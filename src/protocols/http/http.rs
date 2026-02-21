@@ -32,6 +32,16 @@ impl Protocol for Http {
             }
         };
 
+        if request_line.1.contains("..") {
+            stream.write_all(b"HTTP/1.1 400 Bad Request\r\n\
+            Content-Length: 8\r\n\
+            Content-Type: text/plain\r\n\
+            \r\n\
+            Fuck You"
+            )?;
+            return Ok(());
+        }
+
         let header:HashMap<String, String> = Self::parse_header(&mut buf_reader);
 
         let content_length:usize = match header.get("Content-Length") {
