@@ -1,5 +1,7 @@
+use std::error::Error;
+use std::io::ErrorKind;
 use std::net::TcpListener;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, PoisonError, RwLock};
 use std::time::Duration;
 use crate::protocols::protocol::Protocol;
 use crate::server::thread_pool::{ThreadPool};
@@ -11,7 +13,7 @@ pub struct Server {
     use_tls: bool,
 }
 
-pub type Task = Box<dyn FnOnce() + Send + Sync + 'static>;
+pub type Task = Box<dyn FnOnce() -> Result<(), Box<dyn Error>> + Send + Sync + 'static>;
 
 impl Server {
 
@@ -60,14 +62,16 @@ impl Server {
             let task:Task = Box::new(move || {
                 let protocol = match protocol_lock.read() {
                     Ok(read) => read,
-                    Err(_e) => return // TODO LOG ERROR
+                    Err(e) => {
+                        return Err(Box::new(PoisonError::new(e.to_string())));
+                    } // TODO LOG ERROR
                 };
-                match protocol.handle_connection(stream)
-                {
-                    Ok(_) => {}, // todo log_connection ?
+                match protocol.handle_connection(stream) {
+                    Ok(result) => { Ok(result) }, // todo log_connection ?
                     Err(e) => {
                         println!("Error handling connection: {:?}", e);
                         // TODO LOG ERROR
+                        Err(e)
                     }
                 }
             });

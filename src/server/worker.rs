@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::{sleep, JoinHandle};
@@ -21,7 +22,19 @@ impl Worker {
                         Err(_) => None
                     };
                     match task {
-                        Some(task_todo) => {task_todo();},
+                        Some(task_todo) => {
+                            match catch_unwind(AssertUnwindSafe(task_todo)) {
+                                Ok(Ok(_)) => {},
+                                Ok(Err(_e)) => {
+                                    /* TODO LOG ERROR */
+                                    continue;
+                                }
+                                Err(_panic) => {
+                                    /* TODO LOG PANIC */
+                                    continue;
+                                }
+                            }
+                        },
                         None => {sleep(Duration::from_millis(100));}
                     }
                 }

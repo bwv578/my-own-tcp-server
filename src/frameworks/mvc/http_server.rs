@@ -1,4 +1,4 @@
-use std::io::Error;
+use std::error::Error;
 use std::sync::{Arc, OnceLock, RwLock, RwLockWriteGuard};
 use crate::protocols::http::http::Http;
 use crate::protocols::http::http_request::HttpRequest;
@@ -19,7 +19,7 @@ fn get_protocol_writer() -> RwLockWriteGuard<'static, Http> {
 
 pub fn handle_request(
     method:Method, path:&str,
-    action: fn(HttpRequest, HttpResponse) -> Result<(), Error>
+    action: fn(HttpRequest, HttpResponse) -> Result<(), Box<dyn Error>>
 )
 {
     get_protocol_writer()

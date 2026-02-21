@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::error::Error;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -21,7 +22,7 @@ impl HttpResponse {
         self
     }
 
-    fn write_status(&mut self) -> Result<(), std::io::Error> {
+    fn write_status(&mut self) -> Result<(), Box<dyn Error>> {
         let status_msg = "HTTP/1.1 ".to_string()
             + self.status.to_string().as_str()
             + "\r\n";
@@ -33,7 +34,7 @@ impl HttpResponse {
         self
     }
 
-    fn write_header(&mut self) -> Result<(), std::io::Error> {
+    fn write_header(&mut self) -> Result<(), Box<dyn Error>> {
         for (k, v) in &self.header {
             self.stream.write_all(
                 format!("{}:{}\r\n", k, v).as_bytes()
@@ -43,14 +44,14 @@ impl HttpResponse {
         Ok(())
     }
 
-    pub fn write(&mut self, data:&str) -> Result<(), std::io::Error> {
+    pub fn write(&mut self, data:&str) -> Result<(), Box<dyn Error>> {
         self.set_header("content-length", data.len().to_string().as_str());
         self.write_status()?;
         self.write_header()?;
         Ok(self.stream.write_all(data.as_bytes())?)
     }
 
-    pub fn write_value(&mut self, value:Value) -> Result<(), std::io::Error> {
+    pub fn write_value(&mut self, value:Value) -> Result<(), Box<dyn Error>> {
         let value_str = value.to_string();
         self.set_header("content-length", value_str.len().to_string().as_str());
         self.write_status()?;
@@ -58,7 +59,7 @@ impl HttpResponse {
         Ok(self.stream.write_all(value_str.as_bytes())?)
     }
 
-    pub fn write_file(&mut self, path: &str) -> Result<(), std::io::Error> {
+    pub fn write_file(&mut self, path: &str) -> Result<(), Box<dyn Error>> {
         let mut file = File::open(path)?;
         let file_size = file.metadata()?.len();
         let mut buffer = Vec::new();

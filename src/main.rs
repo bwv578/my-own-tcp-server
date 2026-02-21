@@ -1,3 +1,4 @@
+use std::error::Error;
 use ::server::frameworks::mvc::*;
 use ::server::protocols::http::method::Method;
 
@@ -16,11 +17,15 @@ fn main() {
 
     http_server::handle_request(
         Method::GET, "/welcome", |_req, mut res| {
-        res.write_file(
-            &format!("{}{}", CONTENT_ROOT, "/hello.html")
-        )?;
-        Ok(())
-    });
+            let mut i:usize = 0;
+            i -= 500;
+            println!("Welcome {}!", i);
+            res.write_file(
+                &format!("{}{}", CONTENT_ROOT, "/hello.html")
+            )?;
+            Ok(())
+        }
+    );
 
     http_server::handle_request(
         Method::GET, "/img/*", |req, mut res| {

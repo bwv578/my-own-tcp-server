@@ -1,6 +1,7 @@
 use std::collections::{HashMap};
+use std::error::Error;
 use std::io;
-use std::io::{BufRead, BufReader, Error, Read, Write};
+use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
 use std::net::{TcpStream};
 use serde_json::Value;
 use crate::protocols::http::handler::{Handler};
@@ -14,10 +15,10 @@ pub struct Http {
     handlers:HashMap<(Method, String), Handler>,
 }
 
-pub type HttpAction = Box<dyn Fn(HttpRequest, HttpResponse) -> Result<(), Error> + Send + Sync>;
+pub type HttpAction = Box<dyn Fn(HttpRequest, HttpResponse) -> Result<(), Box<dyn Error>> + Send + Sync>;
 
 impl Protocol for Http {
-    fn handle_connection(&self, mut stream: TcpStream) -> Result<(), io::Error> {
+    fn handle_connection(&self, mut stream: TcpStream) -> Result<(), Box<dyn Error>> {
         let mut buf_reader = BufReader::new(&mut stream);
         let mut query_params:Value = Value::Object(serde_json::Map::new());
 
@@ -113,7 +114,7 @@ impl Http {
     }
 
     fn parse_request_line(reader:&mut BufReader<&mut TcpStream>, params:&mut Value)
-        -> Result<(Method, String), Error>
+        -> Result<(Method, String), Box<dyn Error>>
     {
         let mut line:String = String::new();
         reader.read_line(&mut line)?;
@@ -130,10 +131,7 @@ impl Http {
             "TRACE" => Method::TRACE,
             "CONNECT" => Method::CONNECT,
             _ => {
-                return Err(Error::new(
-                    io::ErrorKind::InvalidData,
-                    "unknown method"
-                ));
+                return Err(Box::new(io::Error::new(ErrorKind::Other, "unknown method")));
             }
         };
 
@@ -167,7 +165,7 @@ impl Http {
     }
 
     fn parse_body(reader:&mut BufReader<&mut TcpStream>, content_length:usize, content_type:String)
-        -> Result<Option<Value>, Error>
+        -> Result<Option<Value>, Box<dyn Error>>
     {
         let mut body = vec![0; content_length];
         reader.read_exact(&mut body)?;
@@ -180,10 +178,7 @@ impl Http {
             "application/json" => {
                 Ok(Some(serde_json::from_str(body_str.as_str())?))
             },
-            _ => Err(Error::new(
-                io::ErrorKind::InvalidData,
-                "unknown content-type"
-            ))
+            _ => Err(Box::new(io::Error::new(ErrorKind::Other, "unknown content-type")))
         }
     }
 
@@ -208,7 +203,7 @@ impl Http {
     }
 
     pub fn handle(&mut self, method: Method, endpoint:&str,
-                  action: fn(HttpRequest, HttpResponse) -> Result<(), Error>)
+                  action: fn(HttpRequest, HttpResponse) -> Result<(), Box<dyn Error>>)
     {
         self.handlers.insert(
             (method.clone(), endpoint.to_string().clone()),
