@@ -16,19 +16,13 @@ impl Worker {
         Self {
             handle: thread::spawn(move || {
                 loop {
-                    let task:Option<Task> = {
-                        match task_queue.lock() {
-                            Ok(mut task_queue_mutex) => {
-                                task_queue_mutex.pop_front()
-                            },
-                            Err(_) => None
-                        }
-                    }; // 중괄호 닫힐때 락 해제
-
-                    if let Some(task) = task {
-                        task();
-                    }else{
-                        sleep(Duration::from_millis(100));
+                    let task:Option<Task> = match task_queue.lock() {
+                        Ok(mut task_queue_mutex) => task_queue_mutex.pop_front(),
+                        Err(_) => None
+                    };
+                    match task {
+                        Some(task_todo) => {task_todo();},
+                        None => {sleep(Duration::from_millis(100));}
                     }
                 }
             }),
