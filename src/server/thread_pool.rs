@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::error::Error;
 use std::sync::{Arc, Mutex};
 use crate::server::server::Task;
 use crate::server::worker::Worker;
@@ -22,7 +23,12 @@ impl ThreadPool {
         Self { task_queue, workers }
     }
 
-    pub fn push_task(&mut self, task: Task) {
-        self.task_queue.lock().unwrap().push_back(task);
+    pub fn push_task(&self, task: Task) -> Result<(), Box<dyn Error + '_>> {
+        match self.task_queue.lock() {
+            Ok(mut queue) => {
+                Ok(queue.push_back(task))
+            },
+            Err(e) => Err(Box::new(e)),
+        }
     }
 }

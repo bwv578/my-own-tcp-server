@@ -17,7 +17,12 @@ impl Worker {
             handle: thread::spawn(move || {
                 loop {
                     let task:Option<Task> = {
-                        task_queue.lock().unwrap().pop_front()
+                        match task_queue.lock() {
+                            Ok(mut task_queue_mutex) => {
+                                task_queue_mutex.pop_front()
+                            },
+                            Err(_) => None
+                        }
                     }; // 중괄호 닫힐때 락 해제
 
                     if let Some(task) = task {

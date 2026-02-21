@@ -30,6 +30,6 @@ fn main() {
         Ok(())
     });
 
-    http_server::start(8080, 3);
+    http_server::start(8080, 3, false);
 
 }

@@ -150,7 +150,7 @@ impl Http {
         let mut line_buf = String::new();
         loop {
             line_buf.clear();
-            let n = reader.read_line(&mut line_buf).unwrap();
+            let n = reader.read_line(&mut line_buf).unwrap_or(0);
             if n == 0 || line_buf.trim().is_empty() { break; }
 
             let kv: Vec<String> = line_buf.trim()
@@ -171,7 +171,7 @@ impl Http {
     {
         let mut body = vec![0; content_length];
         reader.read_exact(&mut body)?;
-        let body_str = String::from_utf8(body).unwrap();
+        let body_str = String::from_utf8(body).unwrap_or(String::new());
 
         match content_type.to_lowercase().as_str() {
             "text/plain" => Ok(Some(Value::String(body_str))),

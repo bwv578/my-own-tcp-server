@@ -1,5 +1,6 @@
 use std::net::TcpListener;
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
 use crate::protocols::protocol::Protocol;
 use crate::server::thread_pool::{ThreadPool};
 
@@ -7,16 +8,18 @@ pub struct Server {
     protocol: Arc<RwLock<dyn Protocol>>,
     port: u16,
     thread_pool: ThreadPool,
+    use_tls: bool,
 }
 
 pub type Task = Box<dyn FnOnce() + Send + Sync + 'static>;
 
 impl Server {
 
-    pub fn new(protocol:Arc<RwLock<dyn Protocol>>, port: u16, max_threads: u16) -> Server {
+    pub fn new(protocol:Arc<RwLock<dyn Protocol>>, port: u16, max_threads: u16, use_tls:bool) -> Server {
         Server {
             protocol, port,
-            thread_pool: ThreadPool::new(max_threads)
+            thread_pool: ThreadPool::new(max_threads),
+            use_tls
         }
     }
 
@@ -33,20 +36,49 @@ impl Server {
         let listener:TcpListener = Self::listen("0.0.0.0", self.port);
         println!("Server listening on port {}", self.port);
 
-        for stream in listener.incoming() {
-            let protocol = Arc::clone(&self.protocol);
+        for stream_result in listener.incoming() {
+
+            let stream = match stream_result {
+                Ok(stream) => stream,
+                Err(e) => {
+                    println!("Error handling connection: {:?}", e);
+                    // TODO LOG ERROR
+                    continue
+                }
+            };
+
+            match stream.set_read_timeout(Some(Duration::from_secs(3))) {
+                Ok(_) => {},
+                Err(e) => {
+                    println!("Error handling connection: {:?}", e);
+                    // TODO LOG ERROR
+                    continue
+                }
+            }
+
+            let protocol_lock = Arc::clone(&self.protocol);
             let task:Task = Box::new(move || {
-                let read = protocol.read().unwrap();
-                match read.handle_connection(stream.unwrap())
+                let protocol = match protocol_lock.read() {
+                    Ok(read) => read,
+                    Err(_e) => return // TODO LOG ERROR
+                };
+                match protocol.handle_connection(stream)
                 {
                     Ok(_) => {}, // todo log_connection ?
                     Err(e) => {
                         println!("Error handling connection: {:?}", e);
-                        //Self::log_error();
+                        // TODO LOG ERROR
                     }
                 }
             });
-            self.thread_pool.push_task(task);
+
+            match self.thread_pool.push_task(task) {
+                Ok(_) => {},
+                Err(e) => {
+                    // TODO LOG ERROR
+                    println!("Error handling thread pool: {:?}", e);
+                }
+            }
         }
     }
 
