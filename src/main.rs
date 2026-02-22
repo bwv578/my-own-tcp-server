@@ -1,5 +1,9 @@
+use std::fs::File;
+use std::io::BufReader;
+use rustls::ServerConfig;
 use ::server::frameworks::mvc::*;
 use ::server::protocols::http::method::Method;
+use rustls_pemfile::{certs, pkcs8_private_keys};
 
 mod protocols;
 mod server;
@@ -34,6 +38,18 @@ fn main() {
         Ok(())
     });
 
-    http_server::start(8080, 3);
+    let cert_file = &mut BufReader::new(File::open("./cert/cert.pem").unwrap());
+    let key_file = &mut BufReader::new(File::open("./cert/key.pem").unwrap());
+    let certs = certs(cert_file).collect::<Result<Vec<_>, _>>().unwrap();
+    let key = pkcs8_private_keys(key_file)
+        .next().unwrap().unwrap();
+
+    let tls_config = ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(certs, key.into())
+        .unwrap();
+
+    //http_server::start(443, 3, Some(tls_config));
+    http_server::start(7070, 2, None);
 
 }

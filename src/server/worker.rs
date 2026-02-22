@@ -9,7 +9,6 @@ use crate::server::server::Task;
 
 pub struct Worker {
     handle: JoinHandle<()>,
-    id: String
 }
 
 impl Worker {
@@ -39,7 +38,6 @@ impl Worker {
                     }
                 }
             }),
-            id: Uuid::new_v4().to_string(),
         }
     }
 }

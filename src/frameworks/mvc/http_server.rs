@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::sync::{Arc, OnceLock, RwLock, RwLockWriteGuard};
+use rustls::ServerConfig;
 use crate::protocols::http::http::Http;
 use crate::protocols::http::http_request::HttpRequest;
 use crate::protocols::http::http_response::HttpResponse;
@@ -26,9 +27,15 @@ pub fn handle_request(
         .handle(method, path, action);
 }
 
-pub fn start(port:u16, max_threads:u16) {
-    Server::new(
+pub fn start(port:u16, max_threads:u16, tls_config:Option<ServerConfig>) {
+    let mut server = Server::new(
         HTTP_MVC.get().unwrap().clone(),
         port, max_threads
-    ).start();
+    );
+
+    if let Some(tls_config) = tls_config {
+        server.tls_config = Some(Arc::new(tls_config));
+    }
+
+    server.start();
 }

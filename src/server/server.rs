@@ -11,7 +11,7 @@ pub struct Server {
     protocol: Arc<RwLock<dyn Protocol>>,
     port: u16,
     thread_pool: ThreadPool,
-    tls_config: Option<Arc<rustls::ServerConfig>>,
+    pub tls_config: Option<Arc<rustls::ServerConfig>>,
 }
 
 pub type Task = Box<dyn FnOnce() -> Result<(), Box<dyn Error>> + Send + Sync + 'static>;
@@ -37,10 +37,6 @@ impl Server {
 
     fn log_error(){
         todo!()
-    }
-
-    pub fn tls_config(&mut self, config:Arc<rustls::ServerConfig>){
-        self.tls_config = Some(config);
     }
 
     pub fn start(&mut self) {
@@ -92,6 +88,7 @@ impl Server {
                     Ok(result) => { Ok(result) }, // todo log_connection ?
                     Err(e) => {
                         println!("Error handling connection: {:?}", e);
+                        println!("Worker: {:?}", std::thread::current().id());
                         // TODO LOG ERROR
                         Err(e)
                     }

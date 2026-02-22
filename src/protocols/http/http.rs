@@ -189,8 +189,8 @@ impl Http {
             .collect::<Vec<&str>>();
 
         while endpoint_vec.len() > 0 {
-            endpoint_vec.remove(endpoint_vec.len() - 1);
             let search = endpoint_vec.join("/") + "/*";
+            endpoint_vec.remove(endpoint_vec.len() - 1);
             
             match self.handlers.get( &(method.clone(), search) ){
                 Some(handler) => {
