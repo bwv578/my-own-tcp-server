@@ -2,7 +2,7 @@ use std::collections::{HashMap};
 use std::error::Error;
 use std::io;
 use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
-use std::net::{TcpStream};
+use std::net::SocketAddr;
 use serde_json::Value;
 use crate::protocols::http::handler::{Handler};
 use crate::protocols::http::http_request::HttpRequest;
@@ -10,6 +10,7 @@ use crate::protocols::http::http_response::HttpResponse;
 use crate::protocols::http::method::Method;
 use crate::protocols::http::util::decode_query;
 use crate::protocols::protocol::{Protocol};
+use crate::server::server::ReadWrite;
 
 pub struct Http {
     handlers:HashMap<(Method, String), Handler>,
@@ -18,8 +19,8 @@ pub struct Http {
 pub type HttpAction = Box<dyn Fn(HttpRequest, HttpResponse) -> Result<(), Box<dyn Error>> + Send + Sync>;
 
 impl Protocol for Http {
-    fn handle_connection(&self, mut stream: TcpStream) -> Result<(), Box<dyn Error>> {
-        let mut buf_reader = BufReader::new(&mut stream);
+    fn handle_connection(&self, mut stream: Box<dyn ReadWrite>, peer:SocketAddr) -> Result<(), Box<dyn Error>> {
+        let mut buf_reader = BufReader::new(&mut *stream);
         let mut query_params:Value = Value::Object(serde_json::Map::new());
 
         let request_line:(Method, String) = match Self::parse_request_line(&mut buf_reader, &mut query_params) {
@@ -74,7 +75,7 @@ impl Protocol for Http {
                 handler.execute(
                     HttpRequest::new(
                         request_line.0, request_line.1, header,
-                        query_params, body_params, stream.peer_addr()?
+                        query_params, body_params, peer
                     ),
                     HttpResponse::new(stream, 200, HashMap::new())
                 )?;
@@ -87,7 +88,7 @@ impl Protocol for Http {
                         wildcard_handler.execute(
                             HttpRequest::new(
                                 request_line.0, request_line.1, header,
-                                query_params, body_params, stream.peer_addr()?
+                                query_params, body_params, peer
                             ),
                             HttpResponse::new(stream, 200, HashMap::new())
                         )?;
@@ -113,7 +114,7 @@ impl Http {
         Self{ handlers: HashMap::new()}
     }
 
-    fn parse_request_line(reader:&mut BufReader<&mut TcpStream>, params:&mut Value)
+    fn parse_request_line(reader:&mut BufReader<&mut dyn ReadWrite>, params:&mut Value)
         -> Result<(Method, String), Box<dyn Error>>
     {
         let mut line:String = String::new();
@@ -143,7 +144,7 @@ impl Http {
         Ok((method, endpoint.to_string()))
     }
 
-    fn parse_header(reader:&mut BufReader<&mut TcpStream>) -> HashMap<String, String> {
+    fn parse_header(reader:&mut BufReader<&mut dyn ReadWrite>) -> HashMap<String, String> {
         let mut header:HashMap<String, String> = HashMap::new();
         let mut line_buf = String::new();
         loop {
@@ -164,7 +165,7 @@ impl Http {
         header
     }
 
-    fn parse_body(reader:&mut BufReader<&mut TcpStream>, content_length:usize, content_type:String)
+    fn parse_body(reader:&mut BufReader<&mut dyn ReadWrite>, content_length:usize, content_type:String)
         -> Result<Option<Value>, Box<dyn Error>>
     {
         let mut body = vec![0; content_length];

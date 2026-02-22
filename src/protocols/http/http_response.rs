@@ -2,18 +2,18 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
 use std::io::{Read, Write};
-use std::net::TcpStream;
 use serde_json::Value;
+use crate::server::server::ReadWrite;
 
 pub struct HttpResponse {
-    stream:TcpStream,
+    stream:Box<dyn ReadWrite>,
     status:u16,
     header:HashMap<String, String>,
 }
 
 impl HttpResponse {
 
-    pub fn new(stream:TcpStream, status:u16, header:HashMap<String, String>) -> Self {
+    pub fn new(stream:Box<dyn ReadWrite>, status:u16, header:HashMap<String, String>) -> Self {
         Self { stream, status, header }
     }
 

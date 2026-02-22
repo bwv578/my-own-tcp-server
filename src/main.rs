@@ -1,4 +1,3 @@
-use std::error::Error;
 use ::server::frameworks::mvc::*;
 use ::server::protocols::http::method::Method;
 
@@ -35,6 +34,6 @@ fn main() {
         Ok(())
     });
 
-    http_server::start(8080, 3, false);
+    http_server::start(8080, 3);
 
 }

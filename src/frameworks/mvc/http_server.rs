@@ -26,9 +26,9 @@ pub fn handle_request(
         .handle(method, path, action);
 }
 
-pub fn start(port:u16, max_threads:u16, use_tls:bool) {
+pub fn start(port:u16, max_threads:u16) {
     Server::new(
         HTTP_MVC.get().unwrap().clone(),
-        port, max_threads, use_tls
+        port, max_threads
     ).start();
 }
