@@ -5,7 +5,7 @@ use crate::protocols::http::http::Http;
 use crate::protocols::http::http_request::HttpRequest;
 use crate::protocols::http::http_response::HttpResponse;
 use crate::protocols::http::method::Method;
-use crate::server::server::Server;
+use crate::server::server::{Port, Server};
 
 static HTTP_MVC:OnceLock<Arc<RwLock<Http>>> = OnceLock::new();
 
@@ -27,11 +27,15 @@ pub fn handle_request(
         .handle(method, path, action);
 }
 
-pub fn start(port:u16, max_threads:u16, tls_config:Option<ServerConfig>) {
-    let mut server = Server::new(
-        HTTP_MVC.get().unwrap().clone(),
-        port, max_threads
-    );
+pub fn start(port_nums:Vec<u16>, max_threads:u16, tls_config:Option<ServerConfig>) {
+    let mut ports:Vec<Port> = Vec::new();
+    for port_num in port_nums {
+        ports.push(
+            Port::new(port_num, HTTP_MVC.get().unwrap().clone())
+        )
+    }
+
+    let mut server = Server::new(ports, max_threads);
 
     if let Some(tls_config) = tls_config {
         server.tls_config = Some(Arc::new(tls_config));

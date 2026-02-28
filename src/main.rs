@@ -50,6 +50,7 @@ fn main() {
         .unwrap();
 
     //http_server::start(443, 3, Some(tls_config));
-    http_server::start(7070, 2, None);
 
+    http_server::start(vec![7070, 8080, 8081, 8082], 2, None);
+    
 }
