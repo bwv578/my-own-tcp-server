@@ -2,15 +2,18 @@ use std::collections::{HashMap};
 use std::error::Error;
 use std::io;
 use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
-use std::net::SocketAddr;
+use std::net::{SocketAddr, TcpStream};
+use std::sync::Arc;
+use rustls::{ServerConnection, StreamOwned};
 use serde_json::Value;
+use crate::protocols::http::default::*;
 use crate::protocols::http::handler::{Handler};
 use crate::protocols::http::http_request::HttpRequest;
 use crate::protocols::http::http_response::HttpResponse;
 use crate::protocols::http::method::Method;
 use crate::protocols::http::util::decode_query;
 use crate::protocols::protocol::{Protocol};
-use crate::server::server::ReadWrite;
+use crate::protocols::protocol::ReadWrite;
 
 pub struct Http {
     handlers:HashMap<(Method, String), Handler>,
@@ -19,28 +22,31 @@ pub struct Http {
 pub type HttpAction = Box<dyn Fn(HttpRequest, HttpResponse) -> Result<(), Box<dyn Error>> + Send + Sync>;
 
 impl Protocol for Http {
-    fn handle_connection(&self, mut stream: Box<dyn ReadWrite>, peer:SocketAddr) -> Result<(), Box<dyn Error>> {
-        let mut buf_reader = BufReader::new(&mut *stream);
+    fn handle_connection(&self, stream: TcpStream, peer:SocketAddr, tls_config:Option<Arc<rustls::ServerConfig>>)
+        -> Result<(), Box<dyn Error>>
+    {
+        let mut stream_to_handle:Box<dyn ReadWrite> = match tls_config {
+            Some(ref config) => {
+                let conn = ServerConnection::new(config.clone())?;
+                let tls_stream = StreamOwned::new(conn, stream);
+                Box::new(tls_stream)
+            },
+            None => Box::new(stream)
+        };
+
+        let mut buf_reader = BufReader::new(&mut *stream_to_handle);
         let mut query_params:Value = Value::Object(serde_json::Map::new());
 
         let request_line:(Method, String) = match Self::parse_request_line(&mut buf_reader, &mut query_params) {
             Ok (request) => request,
             Err(_error) => {
-                stream.write_all(b"HTTP/1.1 400 Bad Request\r\n\
-                Content-Length: 11\r\n\
-                Content-Type: text/plain\r\n"
-                )?;
+                stream_to_handle.write_all(BAD_REQUEST)?;
                 return Ok(());
             }
         };
 
         if request_line.1.contains("..") {
-            stream.write_all(b"HTTP/1.1 400 Bad Request\r\n\
-            Content-Length: 8\r\n\
-            Content-Type: text/plain\r\n\
-            \r\n\
-            Fuck You"
-            )?;
+            stream_to_handle.write_all(BAD_REQUEST)?;
             return Ok(());
         }
 
@@ -61,10 +67,7 @@ impl Protocol for Http {
         let body_params:Value = match Self::parse_body(&mut buf_reader, content_length, content_type) {
             Ok(Some(body)) => body,
             Err(_error) => {
-                stream.write_all(b"HTTP/1.1 400 Bad Request\r\n\
-                Content-Length: 11\r\n\
-                Content-Type: text/plain\r\n"
-                )?;
+                stream_to_handle.write_all(BAD_REQUEST)?;
                 return Ok(());
             },
             _ => Value::Null
@@ -77,7 +80,7 @@ impl Protocol for Http {
                         request_line.0, request_line.1, header,
                         query_params, body_params, peer
                     ),
-                    HttpResponse::new(stream, 200, HashMap::new())
+                    HttpResponse::new(stream_to_handle, 200, HashMap::new())
                 )?;
             },
 
@@ -90,16 +93,12 @@ impl Protocol for Http {
                                 request_line.0, request_line.1, header,
                                 query_params, body_params, peer
                             ),
-                            HttpResponse::new(stream, 200, HashMap::new())
+                            HttpResponse::new(stream_to_handle, 200, HashMap::new())
                         )?;
                     },
                     None => {
                         // 핸들러 없음 => 404
-                        stream.write_all(b"HTTP/1.1 404 Not Found\r\n\
-                        Content-Length: 10\r\n\
-                        Content-Type: text/plain\r\n\
-                        \r\n\
-                        Not Found")?;
+                        stream_to_handle.write_all(NOT_FOUND)?;
                     }
                 }
             }

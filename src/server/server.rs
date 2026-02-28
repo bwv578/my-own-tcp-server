@@ -1,11 +1,9 @@
 use std::error::Error;
-use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::sync::{Arc, PoisonError, RwLock};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
-use rustls::{ServerConnection, StreamOwned};
 use crate::protocols::protocol::Protocol;
 use crate::server::thread_pool::{ThreadPool};
 
@@ -22,9 +20,6 @@ pub struct Port {
 }
 
 pub type Task = Box<dyn FnOnce() -> Result<(), Box<dyn Error>> + Send + Sync + 'static>;
-
-pub trait ReadWrite: Read + Write + Send + Sync + 'static {}
-impl<T: Read + Write + Send + Sync + 'static> ReadWrite for T {}
 
 impl Port {
     pub fn new(port_num: u16, protocol: Arc<RwLock<dyn Protocol>>) -> Self {
@@ -45,10 +40,6 @@ impl Server {
     fn get_listener(ip:&str, port:u16) -> TcpListener {
         let listen_to = format!("{}:{}", ip, port);
         TcpListener::bind(listen_to).unwrap()
-    }
-
-    fn log_error(){
-        todo!()
     }
 
     pub fn start(self) {
@@ -88,11 +79,6 @@ impl Server {
                 }
             };
 
-            let peer = match stream.peer_addr() {
-                Ok(peer) => peer,
-                Err(_e) => continue // TODO LOG ERROR
-            };
-
             match stream.set_read_timeout(Some(Duration::from_secs(3))) {
                 Ok(_) => {},
                 Err(e) => {
@@ -102,16 +88,13 @@ impl Server {
                 }
             }
 
-            let stream_to_handle:Box<dyn ReadWrite> = match self.tls_config {
-                Some(ref config) => {
-                    let conn = ServerConnection::new(config.clone()).unwrap();
-                    let tls_stream = StreamOwned::new(conn, stream);
-                    Box::new(tls_stream)
-                },
-                None => Box::new(stream)
+            let peer = match stream.peer_addr() {
+                Ok(peer) => peer,
+                Err(_e) => continue // TODO LOG ERROR
             };
-
+            let tls_config = self.tls_config.clone();
             let protocol_lock = Arc::clone(&protocol);
+
             let task:Task = Box::new(move || {
                 let protocol = match protocol_lock.read() {
                     Ok(read) => read,
@@ -119,7 +102,7 @@ impl Server {
                         return Err(Box::new(PoisonError::new(e.to_string())));
                     } // TODO LOG ERROR
                 };
-                match protocol.handle_connection(stream_to_handle, peer) {
+                match protocol.handle_connection(stream, peer, tls_config) {
                     Ok(result) => { Ok(result) }, // todo log_connection ?
                     Err(e) => {
                         println!("Error handling connection: {:?}", e);

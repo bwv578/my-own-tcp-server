@@ -13,7 +13,7 @@ fn main() {
     static CONTENT_ROOT: &str = "./examples";
 
     http_server::handle_request(
-        Method::GET, "/does/rwlock/works/*", |req, mut res| {
+        Method::GET, "/does/rwlock/works/*", |_req, mut res| {
         res.write("<h1>RW Lock works OoO</h1>")?;
         Ok(())
     });
@@ -51,6 +51,5 @@ fn main() {
 
     //http_server::start(443, 3, Some(tls_config));
 
-    http_server::start(vec![7070, 8080, 8081, 8082], 2, None);
-    
+    http_server::start(vec![7070, 8080, 8081, 8082, 443], 2, Some(tls_config));
 }
