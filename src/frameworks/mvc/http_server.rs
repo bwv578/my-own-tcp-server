@@ -1,11 +1,9 @@
 use std::error::Error;
 use std::sync::{Arc, OnceLock, RwLock, RwLockWriteGuard};
 use rustls::ServerConfig;
-use crate::protocols::http::http::Http;
-use crate::protocols::http::http_request::HttpRequest;
-use crate::protocols::http::http_response::HttpResponse;
-use crate::protocols::http::method::Method;
-use crate::server::server::{Port, Server};
+use crate::applications::web::protocol::Http;
+use crate::applications::web::http::{HttpRequest, HttpResponse, Method};
+use crate::core::runtime::{Port, Server};
 
 static HTTP_MVC:OnceLock<Arc<RwLock<Http>>> = OnceLock::new();
 

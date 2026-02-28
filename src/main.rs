@@ -1,25 +1,25 @@
 use std::fs::File;
 use std::io::BufReader;
 use rustls::ServerConfig;
-use ::server::frameworks::mvc::*;
-use ::server::protocols::http::method::Method;
 use rustls_pemfile::{certs, pkcs8_private_keys};
+use tcp_server::applications::web::http::Method::GET;
+use tcp_server::frameworks::mvc::http_server;
 
-mod protocols;
-mod server;
+mod applications;
+mod core;
 
 fn main() {
     //test
     static CONTENT_ROOT: &str = "./examples";
 
     http_server::handle_request(
-        Method::GET, "/does/rwlock/works/*", |_req, mut res| {
+        GET, "/does/rwlock/works/*", |_req, mut res| {
         res.write("<h1>RW Lock works OoO</h1>")?;
         Ok(())
     });
 
     http_server::handle_request(
-        Method::GET, "/welcome", |_req, mut res| {
+        GET, "/welcome", |_req, mut res| {
             let mut i:usize = 0;
             i -= 500;
             println!("Welcome {}!", i);
@@ -31,7 +31,7 @@ fn main() {
     );
 
     http_server::handle_request(
-        Method::GET, "/img/*", |req, mut res| {
+        GET, "/img/*", |req, mut res| {
         res.write_file(
             &format!("{}{}", CONTENT_ROOT, req.endpoint)
         )?;
@@ -48,8 +48,6 @@ fn main() {
         .with_no_client_auth()
         .with_single_cert(certs, key.into())
         .unwrap();
-
-    //http_server::start(443, 3, Some(tls_config));
 
     http_server::start(vec![7070, 8080, 8081, 8082, 443], 2, Some(tls_config));
 }

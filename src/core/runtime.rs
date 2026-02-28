@@ -4,8 +4,8 @@ use std::sync::{Arc, PoisonError, RwLock};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
-use crate::protocols::protocol::Protocol;
-use crate::server::thread_pool::{ThreadPool};
+use crate::applications::protocol::Protocol;
+use crate::core::executor::{ThreadPool};
 
 pub struct Server {
     pub ports: Vec<Port>,

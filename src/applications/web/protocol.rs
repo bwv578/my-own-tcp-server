@@ -6,20 +6,33 @@ use std::net::{SocketAddr, TcpStream};
 use std::sync::Arc;
 use rustls::{ServerConnection, StreamOwned};
 use serde_json::Value;
-use crate::protocols::http::default::*;
-use crate::protocols::http::handler::{Handler};
-use crate::protocols::http::http_request::HttpRequest;
-use crate::protocols::http::http_response::HttpResponse;
-use crate::protocols::http::method::Method;
-use crate::protocols::http::util::decode_query;
-use crate::protocols::protocol::{Protocol};
-use crate::protocols::protocol::ReadWrite;
+use crate::applications::web::default::*;
+use crate::applications::web::http::{Action, HttpRequest, HttpResponse, Method};
+use crate::applications::web::util::decode_query;
+use crate::applications::protocol::{Protocol};
+use crate::applications::protocol::ReadWrite;
+
+
+pub struct Handler {
+    pub method: Method,
+    pub endpoint: String,
+    action: Action
+}
+
+impl Handler {
+    pub fn new(method: Method, endpoint:&str, action: Action) -> Self {
+        Self { method, endpoint:String::from(endpoint), action }
+    }
+
+    pub fn execute(&self, request:HttpRequest, response:HttpResponse) -> Result<(), Box<dyn Error>> {
+        Ok((*self.action)(request, response)?)
+    }
+}
+
 
 pub struct Http {
     handlers:HashMap<(Method, String), Handler>,
 }
-
-pub type HttpAction = Box<dyn Fn(HttpRequest, HttpResponse) -> Result<(), Box<dyn Error>> + Send + Sync>;
 
 impl Protocol for Http {
     fn handle_connection(&self, stream: TcpStream, peer:SocketAddr, tls_config:Option<Arc<rustls::ServerConfig>>)

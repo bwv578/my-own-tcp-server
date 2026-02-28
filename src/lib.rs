@@ -1,3 +1,3 @@
-pub mod server;
-pub mod protocols;
+pub mod core;
+pub mod applications;
 pub mod frameworks;
