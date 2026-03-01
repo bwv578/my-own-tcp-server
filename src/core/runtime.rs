@@ -1,17 +1,25 @@
+use std::collections::VecDeque;
 use std::error::Error;
 use std::net::TcpListener;
-use std::sync::{Arc, PoisonError, RwLock};
+use std::sync::{Arc, Mutex, PoisonError, RwLock};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
-use crate::applications::protocol::Protocol;
+use crate::applications::model::Protocol;
 use crate::core::executor::{ThreadPool};
 
-pub struct Server {
+pub trait Queue : Send + Sync + 'static {
+    fn push(&self, item: Task);
+    fn pop(&self) -> Option<Task>;
+}
+
+
+pub struct Server<Q: Queue> {
     pub ports: Vec<Port>,
-    thread_pool: ThreadPool,
+    thread_pool: ThreadPool<Q>,
     pub tls_config: Option<Arc<rustls::ServerConfig>>,
 }
+
 
 #[derive(Clone)]
 pub struct Port {
@@ -27,12 +35,13 @@ impl Port {
     }
 }
 
-impl Server {
+impl<Q: Queue> Server<Q> {
 
-    pub fn new(ports:Vec<Port>, max_threads: u16) -> Server {
+    pub fn new(ports:Vec<Port>, max_threads: u16, task_queue:Q) -> Server<Q> {
         Server {
             ports,
-            thread_pool: ThreadPool::new(max_threads),
+            // todo 테스크 큐 타입 선택 ( async/await, lock-free 등 ). 현재 Mutex<VecDeQueue> 로 고정
+            thread_pool: ThreadPool::new(max_threads, task_queue),
             tls_config: None,
         }
     }
@@ -113,13 +122,7 @@ impl Server {
                 }
             });
 
-            match self.thread_pool.push_task(task) {
-                Ok(_) => {},
-                Err(e) => {
-                    // TODO LOG ERROR
-                    println!("Error handling thread pool: {:?}", e);
-                }
-            }
+            self.thread_pool.push_task(task);
         }
     }
 }

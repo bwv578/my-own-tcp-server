@@ -4,7 +4,7 @@ use serde_json::Value;
 use std::error::Error;
 use std::fs::File;
 use std::io::{Read, Write};
-use crate::applications::protocol::ReadWrite;
+use crate::applications::model::ReadWrite;
 
 #[derive(Clone, Debug)]
 #[derive(Eq, Hash, PartialEq)]

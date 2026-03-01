@@ -2,7 +2,7 @@ use std::error::Error;
 use std::net::{SocketAddr, TcpStream};
 use std::sync::Arc;
 use rustls::ServerConfig;
-use crate::applications::protocol::Protocol;
+use crate::applications::model::Protocol;
 
 pub struct Smtp {
 }

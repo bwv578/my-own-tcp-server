@@ -9,8 +9,8 @@ use serde_json::Value;
 use crate::applications::web::default::*;
 use crate::applications::web::http::{Action, HttpRequest, HttpResponse, Method};
 use crate::applications::web::util::decode_query;
-use crate::applications::protocol::{Protocol};
-use crate::applications::protocol::ReadWrite;
+use crate::applications::model::{Protocol};
+use crate::applications::model::ReadWrite;
 
 
 pub struct Handler {

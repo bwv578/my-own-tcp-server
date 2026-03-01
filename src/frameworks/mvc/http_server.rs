@@ -1,5 +1,6 @@
+use std::collections::VecDeque;
 use std::error::Error;
-use std::sync::{Arc, OnceLock, RwLock, RwLockWriteGuard};
+use std::sync::{Arc, Mutex, OnceLock, RwLock, RwLockWriteGuard};
 use rustls::ServerConfig;
 use crate::applications::web::protocol::Http;
 use crate::applications::web::http::{HttpRequest, HttpResponse, Method};
@@ -33,7 +34,7 @@ pub fn start(port_nums:Vec<u16>, max_threads:u16, tls_config:Option<ServerConfig
         )
     }
 
-    let mut server = Server::new(ports, max_threads);
+    let mut server = Server::new(ports, max_threads, Mutex::new(VecDeque::new()));
 
     if let Some(tls_config) = tls_config {
         server.tls_config = Some(Arc::new(tls_config));
