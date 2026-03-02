@@ -61,7 +61,7 @@ impl Protocol for Smtp {
                     },
                     "EHLO" => {
                         let client = line_iter.next().unwrap_or("");
-                        reply = format!("250 Hello {}\r\n", client);
+                        reply = format!("250-STARTTLS {}\r\n", client);
                     }
                     "MAIL" => {
                         if let Some(sender) = line_iter.next() {
@@ -114,12 +114,12 @@ impl Protocol for Smtp {
 
         let conn = ServerConnection::new(config.unwrap().clone())?;
         let mut tls_stream = StreamOwned::new(conn, stream);
-        //let mut tls_reader = BufReader::new(&mut tls_stream);
         session = SmtpSession::new();
+
+        tls_stream.write_all(b"220 2.0.0 Ready to start TLS")?;
 
         loop {
             line_buf.clear();
-            //if tls_reader.read_line(&mut line_buf)? == 0 { break; }
             if tls_stream.read_line(&mut line_buf)? == 0 { break; }
             println!("received: {}", line_buf);
 
