@@ -60,7 +60,7 @@ impl TaskQueue {
 
 
 pub struct ThreadPool {
-    queue: Arc<TaskQueue>,
+    pub queue: Arc<TaskQueue>,
     workers: Vec<Worker>,
 }
 impl ThreadPool {
@@ -74,9 +74,5 @@ impl ThreadPool {
         }
 
         Self { queue, workers }
-    }
-
-    pub fn push_task(&self, task: Task) {
-        self.queue.push(task);
     }
 }

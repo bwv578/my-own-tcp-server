@@ -39,11 +39,6 @@ impl Server {
         }
     }
 
-    fn get_listener(ip:&str, port:u16) -> TcpListener {
-        let listen_to = format!("{}:{}", ip, port);
-        TcpListener::bind(listen_to).unwrap()
-    }
-
     pub fn start(self) {
         let server = Arc::new(self);
         let mut join_handles:Vec<JoinHandle<()>> = Vec::new();
@@ -66,7 +61,7 @@ impl Server {
     }
 
     fn listen_port(&self, port:Port) {
-        let listener:TcpListener = Self::get_listener("0.0.0.0", port.port_num);
+        let listener = TcpListener::bind(format!("0.0.0.0:{}", port.port_num)).unwrap();
         let protocol:Arc<RwLock<dyn Protocol>> = port.protocol.clone();
 
         println!("Server listening on port {}", port.port_num);
@@ -115,7 +110,7 @@ impl Server {
                 }
             });
 
-            self.thread_pool.push_task(task);
+            self.thread_pool.queue.push(task);
         }
     }
 }

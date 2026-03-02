@@ -1,9 +1,13 @@
 use std::fs::File;
 use std::io::BufReader;
+use std::sync::{Arc, RwLock};
 use rustls::ServerConfig;
 use rustls_pemfile::{certs, pkcs8_private_keys};
 use tcp_server::applications::web::http::Method::GET;
 use tcp_server::frameworks::mvc::http_server;
+use crate::applications::mail::protocol::Smtp;
+use crate::core::runtime::{Port, Server};
+
 
 mod applications;
 mod core;
@@ -49,5 +53,9 @@ fn main() {
         .with_single_cert(certs, key.into())
         .unwrap();
 
-    http_server::start(vec![7070, 8080, 8081, 8082, 443], 2, Some(tls_config));
+    //http_server::start(vec![7070, 8080, 8081, 8082, 443], 2, Some(tls_config));
+
+    let mail_proc = Arc::new(RwLock::new(Smtp::new()));
+    let mail_server = Server::new(vec![Port::new(25, mail_proc)], 3);
+    mail_server.start();
 }
