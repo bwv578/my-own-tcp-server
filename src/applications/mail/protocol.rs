@@ -23,7 +23,7 @@ impl Protocol for Smtp {
         loop {
             line_buf.clear();
             if reader.read_line(&mut line_buf)? == 0 { break; }
-            println!("line: {}", line_buf);
+            println!("received: {}", line_buf);
 
             if session.is_data {
                 match line_buf.trim_end_matches(&['\r','\n'][..]) {
@@ -86,6 +86,7 @@ impl Protocol for Smtp {
                     _ => { reply = format!("500 Unknown command: {}\r\n", command); }
                 }
 
+                println!("reply: {}", reply);
                 stream.write_all(reply.as_bytes())?;
             }
         }
