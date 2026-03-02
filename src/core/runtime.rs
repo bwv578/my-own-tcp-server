@@ -1,22 +1,16 @@
-use std::collections::VecDeque;
 use std::error::Error;
 use std::net::TcpListener;
-use std::sync::{Arc, Mutex, PoisonError, RwLock};
+use std::sync::{Arc, PoisonError, RwLock};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
 use crate::applications::model::Protocol;
 use crate::core::executor::{ThreadPool};
 
-pub trait Queue : Send + Sync + 'static {
-    fn push(&self, item: Task);
-    fn pop(&self) -> Option<Task>;
-}
 
-
-pub struct Server<Q: Queue> {
+pub struct Server {
     pub ports: Vec<Port>,
-    thread_pool: ThreadPool<Q>,
+    thread_pool: ThreadPool,
     pub tls_config: Option<Arc<rustls::ServerConfig>>,
 }
 
@@ -35,13 +29,12 @@ impl Port {
     }
 }
 
-impl<Q: Queue> Server<Q> {
+impl Server {
 
-    pub fn new(ports:Vec<Port>, max_threads: u16, task_queue:Q) -> Server<Q> {
+    pub fn new(ports:Vec<Port>, max_threads: u16) -> Server {
         Server {
             ports,
-            // todo 테스크 큐 타입 선택 ( async/await, lock-free 등 ). 현재 Mutex<VecDeQueue> 로 고정
-            thread_pool: ThreadPool::new(max_threads, task_queue),
+            thread_pool: ThreadPool::new(max_threads),
             tls_config: None,
         }
     }
