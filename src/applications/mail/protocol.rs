@@ -117,6 +117,7 @@ impl Protocol for Smtp {
         session = SmtpSession::new();
 
         tls_stream.write_all(b"220 2.0.0 Ready to start TLS\r\n")?;
+        tls_stream.flush()?;
 
         loop {
             line_buf.clear();
