@@ -10,6 +10,7 @@ use crate::applications::model::Protocol;
 pub struct Smtp {
     domain: String,
     config: Option<Arc<ServerConfig>>,
+    post_handle: fn(SmtpSession) -> Result<(), Box<dyn Error>>,
 }
 impl Protocol for Smtp {
     fn handle_connection(&self, mut stream:TcpStream, _peer: SocketAddr)
@@ -24,7 +25,7 @@ impl Protocol for Smtp {
 
         loop {
             line_buf.clear();
-            if reader.read_line(&mut line_buf)? == 0 { return Ok(()); }
+            if reader.read_line(&mut line_buf)? == 0 { return self.post_handle(session); }
 
             match self.build_response( take(&mut line_buf).as_str(), &mut session )
             {
@@ -46,7 +47,7 @@ impl Protocol for Smtp {
 
         loop {
             line_buf.clear();
-            if tls_stream.read_line(&mut line_buf)? == 0 { return Ok(()); }
+            if tls_stream.read_line(&mut line_buf)? == 0 { return self.post_handle(session); }
 
             match self.build_response( take(&mut line_buf).as_str(), &mut session )
             {
@@ -70,10 +71,11 @@ impl Protocol for Smtp {
 }
 
 impl Smtp {
-    pub fn new(domain:&str) -> Self {
+    pub fn new(domain:&str, post_handle:fn(SmtpSession)->Result<(), Box<dyn Error>>) -> Self {
         Self {
             domain: domain.to_string(),
-            config: None
+            config: None,
+            post_handle
         }
     }
 
