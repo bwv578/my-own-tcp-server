@@ -21,7 +21,9 @@ pub struct Port {
     protocol: Arc<RwLock<dyn Protocol>>,
 }
 
+
 pub type Task = Box<dyn FnOnce() -> Result<(), Box<dyn Error>> + Send + Sync + 'static>;
+
 
 impl Port {
     pub fn new(port_num: u16, protocol: Arc<RwLock<dyn Protocol>>) -> Self {
@@ -88,6 +90,7 @@ impl Server {
         println!("Server listening on port {}", port.port_num);
 
         for stream_result in listener.incoming() {
+            println!("accepted connection");
             let stream = match stream_result {
                 Ok(stream) => stream,
                 Err(e) => {
@@ -130,6 +133,7 @@ impl Server {
                 }
             });
 
+            println!("task pushed.");
             task_queue.push(task);
         }
     }
