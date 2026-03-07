@@ -22,7 +22,7 @@ pub struct Port {
 }
 
 
-pub type Task = Box<dyn FnOnce() -> Result<(), Box<dyn Error>> + Send + Sync + 'static>;
+pub(crate) type Task = Box<dyn FnOnce() -> Result<(), Box<dyn Error>> + Send + Sync + 'static>;
 
 
 impl Port {
@@ -112,6 +112,7 @@ impl Server {
                 Ok(peer) => peer,
                 Err(_e) => continue // TODO LOG ERROR
             };
+
             let protocol_lock = Arc::clone(&protocol);
 
             let task:Task = Box::new(move || {
@@ -135,4 +136,5 @@ impl Server {
             task_queue.push(task);
         }
     }
+
 }
