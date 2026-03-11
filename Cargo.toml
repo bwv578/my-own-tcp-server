@@ -4,8 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-uuid = { version = "1.21.0", features = ["v4"] }
 form_urlencoded = "1.2.2"
 serde_json = "1.0"
 rustls = "0.23"
 rustls-pemfile = "2.2.0"
+mio = { version = "1", features = ["os-poll", "net"] }
+crossbeam-queue = "0.3"

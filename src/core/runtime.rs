@@ -5,7 +5,7 @@ use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
 use crate::applications::model::Protocol;
-use crate::core::executor::{TaskQueue, ThreadPool};
+use crate::core::sync::{TaskQueue, ThreadPool};
 
 #[derive(Clone)]
 pub struct Server {

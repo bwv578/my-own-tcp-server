@@ -100,15 +100,12 @@ impl Protocol for Http {
                 handler.execute(request, response)?;
             },
             None => {
-                // 와일드카드 검색
-                match self.search_wildcard(&request.method, &request.endpoint.as_str()){
+                match self.search_wildcard(&request.method, &request.endpoint.as_str())
+                {
                     Some(wildcard_handler) => {
                         wildcard_handler.execute(request, response)?;
                     },
-                    None => {
-                        // 핸들러 없음 => 404
-                        response.write_bytes(NOT_FOUND)?;
-                    }
+                    None => { response.write_bytes(NOT_FOUND)?; }
                 }
             }
         }
