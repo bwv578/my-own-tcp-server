@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::{Context, Poll, Waker};
 use std::thread::JoinHandle;
 use crossbeam_queue::ArrayQueue;
-use mio::{Events, Interest, Token};
+use mio::{Events, Interest, Registry, Token};
 use mio::net::{TcpListener, TcpStream};
 
 
@@ -121,6 +121,11 @@ impl EventManager {
     fn delegate(&self, token: Token, waker: Waker) {
         self.waker_vtable.lock().unwrap().insert(token, waker);
     }
+
+    fn get_registry_clone(&self) -> Registry {
+        let poll = self.poll.lock().unwrap();
+        poll.registry().try_clone().unwrap()
+    }
 }
 
 
@@ -229,7 +234,7 @@ impl<P: AsyncProtocol> Server<P> {
         self.port_mappings.insert(port, Arc::new(protocol));
     }
 
-    pub fn listen_port(&self, port: u16) {
+    pub fn listen_port(&self, port: u16, event_registry: Registry) {
         let socket = SocketAddr::new( IpAddr::V4(Ipv4Addr::new(0,0,0,0)), port );
         let listener:TcpListener = TcpListener::bind(socket).unwrap();
 
@@ -239,24 +244,21 @@ impl<P: AsyncProtocol> Server<P> {
                 Err(_e) => continue,
             };
 
+            event_registry.register(
+                &mut stream,
+                Token(1),
+                Interest::READABLE,
+            ).unwrap();
+
             let protocol = match self.port_mappings.get(&port) {
                 Some(p) => Arc::clone(p),
                 None => continue,
             };
 
-            let manager = Arc::clone(&self.event_manager);
-
-            {
-                let poll = manager.poll.lock().unwrap();
-                poll.registry().register(
-                    &mut stream,
-                    Token(1),
-                    Interest::READABLE,
-                ).unwrap();
-            }
+            let event_manager = Arc::clone(&self.event_manager);
 
             let task:AsyncTask = Box::pin(async move {
-                let async_stream = AsyncTcpStream::new(stream, Token(1), manager);
+                let async_stream = AsyncTcpStream::new(stream, Token(1), event_manager);
                 protocol.handle_async_connection(async_stream).await;
             });
 
@@ -275,21 +277,22 @@ impl<P: AsyncProtocol> Server<P> {
 
         self.thread_pool.spawn_workers(self.max_threads);
         let server = Arc::new(self);
-
         let event_manager = Arc::clone(&server.event_manager);
-        let event_loop = event_manager.run();
-        join_handles.push(event_loop);
 
         for port in &server.port_mappings {
             let server_clone = Arc::clone(&server);
             let port_clone = port.0.clone();
+            let registry_clone = event_manager.get_registry_clone();
 
             let port_handle = thread::spawn(move || {
-                server_clone.listen_port(port_clone);
+                server_clone.listen_port(port_clone, registry_clone);
             });
 
             join_handles.push(port_handle);
         }
+
+        let event_loop = event_manager.run();
+        join_handles.push(event_loop);
 
         for handle in join_handles {
             handle.join().unwrap();
