@@ -1,3 +1,3 @@
 pub mod runtime;
 mod sync;
-mod async_runtime;
+pub mod async_runtime;

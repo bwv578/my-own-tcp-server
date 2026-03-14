@@ -1,15 +1,78 @@
 use std::collections::HashMap;
+use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::pin::Pin;
 use std::sync::{Arc, Condvar, Mutex};
-use std::thread;
+use std::{io, thread};
+use std::task::{Context, Poll, Waker};
 use crossbeam_queue::ArrayQueue;
-use mio::Events;
+use mio::{Events, Token};
 use mio::net::{TcpListener, TcpStream};
 
 
 pub trait AsyncProtocol: Send + Sync + 'static {
     fn handle_async_connection(&self, stream: TcpStream, peer: SocketAddr) -> impl Future<Output = ()> + Send;
+}
+
+
+pub struct AsyncTcpStream {
+    stream: TcpStream,
+    token: Token,
+    read_buf: Vec<u8>,
+    waker_vtable: Arc<Mutex<HashMap<Token, Waker>>>,
+}
+impl AsyncTcpStream {
+    pub fn new(stream: TcpStream, token: Token, waker_vtable:Arc<Mutex<HashMap<Token, Waker>>>) -> Self {
+        Self { stream, token, read_buf: Vec::new(), waker_vtable }
+    }
+
+    pub fn peer_addr(&self) -> SocketAddr {
+        self.stream.peer_addr().unwrap()
+    }
+
+    fn poll_load_buf(&mut self, cx:&mut Context) -> Poll<io::Result<usize>> {
+        let mut chunk = [0u8; 4096];
+        match self.stream.read(&mut chunk) {
+            Ok(n) => {
+                self.read_buf.extend_from_slice(&chunk[..n]);
+                Poll::Ready(Ok(n))
+            },
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                let mut waker_store = self.waker_vtable.lock().unwrap();
+                waker_store.insert(self.token.clone(), cx.waker().clone());
+                Poll::Pending
+            },
+            Err(e) => Poll::Ready(Err(e)),
+        }
+    }
+    pub fn load_buf(&mut self) -> impl Future<Output = io::Result<usize>> + '_ {
+        std::future::poll_fn(move |cx| self.poll_load_buf(cx))
+    }
+
+    pub async fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if self.read_buf.len() >= buf.len() {
+            buf.copy_from_slice(&self.read_buf[..buf.len()]);
+            self.read_buf.drain(..buf.len());
+            return Ok(buf.len());
+        }
+
+        while self.read_buf.len() < buf.len() {
+            if self.load_buf().await? == 0 {break;}
+        }
+
+        let available = std::cmp::min(self.read_buf.len(), buf.len());
+        buf.copy_from_slice(&self.read_buf[..available]);
+        self.read_buf.drain(..available);
+        Ok(available)
+    }
+
+    /*pub fn read_to_end(&mut self, buf: &mut Vec<u8>) -> std::io::Result<usize> {
+    }
+    pub async fn read_line(&mut self, buf: &mut String) -> io::Result<usize> {
+    }*/
+    pub fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.stream.write(buf)
+    }
 }
 
 
