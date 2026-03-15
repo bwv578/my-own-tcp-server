@@ -23,17 +23,23 @@ pub struct AsyncTcpStream {
     token: Token,
     read_buf: Vec<u8>,
     event_manager: Arc<EventManager>,
+    registry: Registry
+}
+impl Drop for AsyncTcpStream {
+    fn drop(&mut self) {
+        self.registry.deregister(&mut self.stream).unwrap();
+    }
 }
 impl AsyncTcpStream {
-    pub fn new(stream: TcpStream, token: Token, event_manager:Arc<EventManager>) -> Self {
-        Self { stream, token, read_buf: Vec::new(),  event_manager}
+    fn new(stream: TcpStream, token: Token, event_manager:Arc<EventManager>, registry: Registry) -> Self {
+        Self { stream, token, read_buf: Vec::new(),  event_manager, registry }
     }
 
     pub fn peer_addr(&self) -> SocketAddr {
         self.stream.peer_addr().unwrap()
     }
 
-    pub fn poll_load_buf(&mut self, cx:&mut Context) -> Poll<io::Result<usize>> {
+    fn poll_load_buf(&mut self, cx:&mut Context) -> Poll<io::Result<usize>> {
         let mut chunk = [0u8; 4096];
 
         match self.stream.read(&mut chunk) {
@@ -49,7 +55,7 @@ impl AsyncTcpStream {
             Err(e) => Poll::Ready(Err(e)),
         }
     }
-    pub fn load_buf(&mut self) -> impl Future<Output = io::Result<usize>> + '_ {
+    fn load_buf(&mut self) -> impl Future<Output = io::Result<usize>> + '_ {
         std::future::poll_fn(move |cx| self.poll_load_buf(cx))
     }
 
@@ -85,9 +91,6 @@ impl AsyncTcpStream {
                 if 0 == self.load_buf().await? {return Ok(0)}
             }
         }
-    }
-    pub fn drain_read_buf(&mut self, n: usize) -> Vec<u8> {
-        self.read_buf.drain(..n).collect()
     }
 
     fn poll_write(&mut self, buf: &[u8], cx:&mut Context) -> Poll<io::Result<usize>> {
@@ -136,8 +139,10 @@ impl EventManager {
 
             loop {
                 let mut poll = manager.poll.lock().unwrap();
+                println!("event loop: polling...");
                 poll.poll(&mut event_queue, None).unwrap(); // block
                 drop(poll);
+                println!("event loop: got events");
 
                 let mut waker_vtable = manager.waker_vtable.lock().unwrap();
                 // !!! 이벤트 알림와서 웨이커 깨우는동안 작업스레드 Pending 발생시 토큰:웨이커 저장 및 Pending 반환 지연
@@ -146,6 +151,8 @@ impl EventManager {
                 // => 요청수&i/o 많아지면 병목 가능성
                 // => DashMap으로 변경?
                 for event in event_queue.deref().iter() {
+                    let has_waker = waker_vtable.contains_key(&event.token());
+                    println!("event token: {:?}, waker exists: {}", event.token(), has_waker);
                     if let Some(waker) = waker_vtable.remove(&event.token()) {
                         waker.wake();
                     }
@@ -314,20 +321,26 @@ impl<P: AsyncProtocol> Server<P> {
 
     pub fn listen_port(&self, port: u16, event_registry: Registry) {
         let socket = SocketAddr::new( IpAddr::V4(Ipv4Addr::new(0,0,0,0)), port );
-        let listener:TcpListener = TcpListener::bind(socket).unwrap();
+        let listener = std::net::TcpListener::bind(socket).unwrap();
         println!("listening on port {}", port);
 
         loop {
-            let (mut stream, peer) = match listener.accept() {
+            let (std_stream, peer) = match listener.accept() {
                 Ok((stream, peer)) => (stream, peer),
-                Err(_e) => continue,
+                Err(e) => {
+                    println!("accept error {}", e);
+                    continue
+                },
             };
+            let mut stream = TcpStream::from_std(std_stream);
+            println!("accepted connection");
             let token = self.next_token();
+            let registry = event_registry.try_clone().unwrap();
 
-            event_registry.register(
+            registry.register(
                 &mut stream,
                 token,
-                Interest::READABLE | Interest::WRITABLE,
+                Interest::READABLE,
             ).unwrap();
 
             let protocol = match self.port_mappings.get(&port) {
@@ -338,7 +351,9 @@ impl<P: AsyncProtocol> Server<P> {
             let event_manager = Arc::clone(&self.event_manager);
 
             let task:AsyncTask = Box::pin(async move {
-                let async_stream = AsyncTcpStream::new(stream, token, event_manager);
+                let async_stream = AsyncTcpStream::new(
+                    stream, token, event_manager, registry
+                );
                 protocol.handle_async_connection(async_stream).await;
             });
 
