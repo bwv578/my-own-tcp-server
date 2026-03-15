@@ -35,23 +35,18 @@ impl AsyncTcpStream {
 
     pub fn poll_load_buf(&mut self, cx:&mut Context) -> Poll<io::Result<usize>> {
         let mut chunk = [0u8; 4096];
-        println!("start poll load buf");
+
         match self.stream.read(&mut chunk) {
             Ok(n) => {
                 self.read_buf.extend_from_slice(&chunk[..n]);
-                println!("load buf ok.");
                 Poll::Ready(Ok(n))
             },
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                 self.event_manager
                     .delegate( self.token.clone(), cx.waker().clone() );
-                println!("load buf error: would block");
                 Poll::Pending
             },
-            Err(e) => {
-                println!("load buf error: {}", e);
-                Poll::Ready(Err(e))
-            },
+            Err(e) => Poll::Ready(Err(e)),
         }
     }
     pub fn load_buf(&mut self) -> impl Future<Output = io::Result<usize>> + '_ {
@@ -59,16 +54,13 @@ impl AsyncTcpStream {
     }
 
     pub async fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        println!("start reading");
         if self.read_buf.len() >= buf.len() {
             buf.copy_from_slice(&self.read_buf[..buf.len()]);
             self.read_buf.drain(..buf.len());
-            println!("read done.");
             return Ok(buf.len());
         }
 
         while self.read_buf.len() < buf.len() {
-            println!("start load buf");
             if self.load_buf().await? == 0 {break;}
         }
 
@@ -76,13 +68,13 @@ impl AsyncTcpStream {
         buf.copy_from_slice(&self.read_buf[..available]);
         self.read_buf.drain(..available);
 
-        println!("read done.");
         Ok(available)
     }
 
     /*pub fn read_to_end(&mut self, buf: &mut Vec<u8>) -> std::io::Result<usize> {
 
     }*/
+
     pub async fn read_line(&mut self, buf: &mut String) -> io::Result<usize> {
         loop {
             if let Some(lf) = self.read_buf.iter().position(|&b| b == b'\n') {
@@ -98,8 +90,27 @@ impl AsyncTcpStream {
         self.read_buf.drain(..n).collect()
     }
 
-    pub fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.stream.write(buf)
+    fn poll_write(&mut self, buf: &[u8], cx:&mut Context) -> Poll<io::Result<usize>> {
+        match self.stream.write(buf) {
+            Ok(n) => Poll::Ready(Ok(n)),
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                self.event_manager
+                    .delegate(self.token.clone(), cx.waker().clone());
+                Poll::Pending
+            }
+            Err(e) => Poll::Ready(Err(e)),
+        }
+    }
+    fn write<'a>(&'a mut self, buf: &'a [u8]) -> impl Future<Output = io::Result<usize>> + 'a {
+        std::future::poll_fn(move |cx| self.poll_write(buf, cx))
+    }
+
+    pub async fn write_all(&mut self, data: &[u8]) -> io::Result<usize> {
+        let mut written = 0;
+        while written < data.len() {
+            written += self.write(&data[written..]).await?
+        }
+        Ok(written)
     }
 }
 
@@ -135,9 +146,8 @@ impl EventManager {
                 // => 요청수&i/o 많아지면 병목 가능성
                 // => DashMap으로 변경?
                 for event in event_queue.deref().iter() {
-                    match waker_vtable.remove(&event.token()) {
-                        Some(waker) => {waker.wake()}
-                        None => {/*뭐여시벌*/}
+                    if let Some(waker) = waker_vtable.remove(&event.token()) {
+                        waker.wake();
                     }
                 }
             }
@@ -183,12 +193,11 @@ impl TaskQueue {
     fn pop(&self) -> Option<AsyncTask> {
         let mut empty = self.empty.lock().unwrap();
         while *empty {
-            println!("empty.");
             empty = self.notifier.wait(empty).unwrap();
         }
-        println!("pop");
         let task = self.queue.pop();
         *empty = self.queue.is_empty();
+
         task
     }
 }
@@ -239,15 +248,8 @@ impl Worker {
                 let waker = Waker::from(Arc::clone(&task_waker));
                 let mut context = Context::from_waker(&waker);
 
-                print!("found task.");
-                match task.as_mut().poll(&mut context) {
-                    Poll::Pending => {
-                        task_waker.delegate(task);
-                        println!("pending.");
-                    },
-                    Poll::Ready(_) => {
-                        println!("task done.");
-                    }
+                if task.as_mut().poll(&mut context).is_pending() {
+                    task_waker.delegate(task);
                 }
             }
         });
@@ -313,6 +315,7 @@ impl<P: AsyncProtocol> Server<P> {
     pub fn listen_port(&self, port: u16, event_registry: Registry) {
         let socket = SocketAddr::new( IpAddr::V4(Ipv4Addr::new(0,0,0,0)), port );
         let listener:TcpListener = TcpListener::bind(socket).unwrap();
+        println!("listening on port {}", port);
 
         loop {
             let (mut stream, peer) = match listener.accept() {
@@ -324,7 +327,7 @@ impl<P: AsyncProtocol> Server<P> {
             event_registry.register(
                 &mut stream,
                 token,
-                Interest::READABLE,
+                Interest::READABLE | Interest::WRITABLE,
             ).unwrap();
 
             let protocol = match self.port_mappings.get(&port) {
@@ -339,7 +342,6 @@ impl<P: AsyncProtocol> Server<P> {
                 protocol.handle_async_connection(async_stream).await;
             });
 
-            println!("round robin");
             self.thread_pool.round_robin(task);
         }
 

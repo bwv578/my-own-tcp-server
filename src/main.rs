@@ -1,5 +1,4 @@
 use crate::core::async_runtime::{AsyncProtocol, AsyncTcpStream, Server};
-use crate::core::runtime::Port;
 
 mod applications;
 mod core;
@@ -17,8 +16,13 @@ fn main() {
                 let _num_read =stream.read_line(&mut buf).await;
                 while stream.read_line(&mut buf).await.unwrap() != 0 {
                     println!("line read - {}", buf);
+                    if buf == "\r\n" || buf == "\n" {
+                        buf.clear();
+                        break;
+                    }
                     buf.clear();
                 }
+                stream.write_all(b"<h1>Write Test OK</h1>").await.unwrap();
                 //println!("async read result: {:?}", String::from_utf8(buf.to_vec()));
             }
         }
