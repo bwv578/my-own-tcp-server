@@ -41,9 +41,16 @@ fn main() {
         res.write_file("./examples/hello.html").await
     }
 
+    async fn handle_error(_req:HttpRequest, mut res:HttpResponse) -> io::Result<usize> {
+        let mut try_error:usize = 0;
+        try_error -= 1;
+        res.write("hohohohoho").await
+    }
+
     let mut prot = Http::new();
     prot.handle(GET, "/hello", handle_hello);
     prot.handle(GET, "/", handle_file);
+    prot.handle(GET, "/error/*", handle_error);
     
     let mut server:Server<Http> = Server::new();
     server.set_port(8080, prot);

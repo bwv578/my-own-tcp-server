@@ -4,8 +4,9 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::pin::Pin;
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::{io, thread};
-use std::fs::{File, Metadata};
+use std::fs::File;
 use std::ops::Deref;
+use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::task::{Context, Poll, Wake, Waker};
 use std::thread::JoinHandle;
@@ -31,10 +32,14 @@ impl Drop for AsyncFile {
 }
 impl AsyncFile {
     pub fn from(file: File) -> Self {
-        let len = file.metadata().unwrap().len();
+        let len = match file.metadata() {
+            Ok(metadata) => metadata.len() as usize,
+            Err(_) => 0,
+        };
+
         Self {
             file: Some(file),
-            len: len as usize,
+            len,
             read_buf: Arc::new(Mutex::new(Vec::new())),
             waker: Arc::new(Mutex::new(None)),
         }
@@ -56,22 +61,28 @@ impl AsyncFile {
     }
 
     pub async fn read_to_end(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
-        let mut file = self.file.take().unwrap();
+        let mut file = match self.file.take() {
+            Some(f) => f,
+            None => return Err(io::ErrorKind::Other.into()),
+        };
         let inner_buf = Arc::clone(&self.read_buf);
         let waker = Arc::clone(&self.waker);
 
         let task: AsyncTask = Box::pin(async move {
             let mut local_buf = Vec::new();
-            file.read_to_end(&mut local_buf).unwrap();
+            file.read_to_end(&mut local_buf)?;
             *inner_buf.lock().unwrap() = local_buf;
+
             if let Some(w) = waker.lock().unwrap().take() {
                 w.wake();
             }
+            Ok(())
         });
         FIO_POOL.get().unwrap().round_robin(task);
 
         self.read(buf).await
     }
+
 }
 
 pub struct AsyncTcpStream {
@@ -83,7 +94,7 @@ pub struct AsyncTcpStream {
 }
 impl Drop for AsyncTcpStream {
     fn drop(&mut self) {
-        self.registry.deregister(&mut self.stream).unwrap();
+        let _r = self.registry.deregister(&mut self.stream);
     }
 }
 impl AsyncTcpStream {
@@ -91,8 +102,8 @@ impl AsyncTcpStream {
         Self { stream, token, read_buf: Vec::new(),  event_manager, registry }
     }
 
-    pub fn peer_addr(&self) -> SocketAddr {
-        self.stream.peer_addr().unwrap()
+    pub fn peer_addr(&self) -> io::Result<SocketAddr> {
+        self.stream.peer_addr()
     }
 
     fn poll_load_buf(&mut self, cx:&mut Context) -> Poll<io::Result<usize>> {
@@ -153,7 +164,7 @@ impl AsyncTcpStream {
                     &mut self.stream,
                     self.token,
                     Interest::READABLE | Interest::WRITABLE,
-                ).unwrap();
+                )?;
 
                 self.event_manager
                     .delegate(self.token.clone(), cx.waker().clone());
@@ -197,10 +208,11 @@ impl EventManager {
 
             loop {
                 let mut poll = manager.poll.lock().unwrap();
-                println!("event loop: polling...");
-                poll.poll(&mut event_queue, None).unwrap(); // block
+                if let Err(_e) = poll.poll(&mut event_queue, None) {
+                    // todo log error
+                    continue;
+                }
                 drop(poll);
-                println!("event loop: got events");
 
                 let mut waker_vtable = manager.waker_vtable.lock().unwrap();
                 // !!! 이벤트 알림와서 웨이커 깨우는동안 작업스레드 Pending 발생시 토큰:웨이커 저장 및 Pending 반환 지연
@@ -321,9 +333,14 @@ impl Worker {
                 let waker = Waker::from(Arc::clone(&task_waker));
                 let mut context = Context::from_waker(&waker);
 
-                if task.as_mut().poll(&mut context).is_pending() {
-                    task_waker.delegate(task);
-                }
+                match std::panic::catch_unwind(AssertUnwindSafe(|| {
+                    task.as_mut().poll(&mut context)
+                })) {
+                    Ok(Poll::Ready(Ok(()))) => {},
+                    Ok(Poll::Ready(Err(e))) => {/* todo log error */}
+                    Ok(Poll::Pending) => { task_waker.delegate(task); },
+                    Err(_) => { /* !!! PANIC => catch unwind / log error */ }
+                };
             }
         });
 
@@ -365,7 +382,7 @@ pub struct Server<P: AsyncProtocol> {
     max_fio_threads: usize,
     next_token: AtomicUsize
 }
-pub(crate) type AsyncTask = Pin<Box<dyn Future<Output=()> + Send>>;
+pub(crate) type AsyncTask = Pin<Box<dyn Future<Output=io::Result<()>> + Send>>;
 impl<P: AsyncProtocol> Server<P> {
 
     pub fn new() -> Self {
@@ -405,11 +422,11 @@ impl<P: AsyncProtocol> Server<P> {
             let token = self.next_token();
             let registry = event_registry.try_clone().unwrap();
 
-            registry.register(
+            if let Err(_e) = registry.register(
                 &mut stream,
                 token,
                 Interest::READABLE,
-            ).unwrap();
+            ) {continue;}
 
             let protocol = match self.port_mappings.get(&port) {
                 Some(p) => Arc::clone(p),
@@ -422,7 +439,8 @@ impl<P: AsyncProtocol> Server<P> {
                 let async_stream = AsyncTcpStream::new(
                     stream, token, event_manager, registry
                 );
-                protocol.handle_async_connection(async_stream).await.unwrap();
+                protocol.handle_async_connection(async_stream).await?;
+                Ok(())
             });
 
             self.nio_pool.round_robin(task);
