@@ -28,10 +28,16 @@ impl Handler {
 pub struct Http {
     handlers:HashMap<(Method, String), Handler>,
     config: Option<Arc<ServerConfig>>,
+    pub use_tls: bool,
 }
 
 impl AsyncProtocol for Http {
     async fn handle_async_connection(&self, mut stream: AsyncTcpStream) -> io::Result<usize> {
+        if self.use_tls {
+            println!("Start TLS");
+            stream.start_tls(Arc::clone(self.config.as_ref().unwrap())).await?;
+        }
+
         let mut query_params:Value = Value::Object(serde_json::Map::new());
 
         let request_line:(Method, String) = match Self::parse_request_line(&mut stream, &mut query_params).await {
@@ -107,8 +113,13 @@ impl Http {
     pub fn new() -> Self {
         Self{
             handlers: HashMap::new(),
-            config: None
+            config: None,
+            use_tls: false,
         }
+    }
+
+    pub fn set_config(&mut self, config:Arc<ServerConfig>) {
+        self.config = Some(config);
     }
 
     async fn parse_request_line(stream:&mut AsyncTcpStream, params:&mut Value)

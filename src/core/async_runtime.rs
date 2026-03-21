@@ -1,5 +1,6 @@
+use io::Error;
 use std::collections::HashMap;
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::pin::Pin;
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
@@ -10,10 +11,11 @@ use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::task::{Context, Poll, Wake, Waker};
 use std::thread::JoinHandle;
+use std::time::Duration;
 use crossbeam_queue::ArrayQueue;
 use mio::{Events, Interest, Registry, Token};
 use mio::net::TcpStream;
-
+use rustls::{ServerConfig, ServerConnection};
 
 pub trait AsyncProtocol: Send + Sync + 'static {
     fn handle_async_connection(&self, stream: AsyncTcpStream) -> impl Future<Output = io::Result<usize>> + Send;
@@ -26,10 +28,6 @@ pub struct AsyncFile {
     waker: Arc<Mutex<Option<Waker>>>,
 }
 static FIO_POOL:OnceLock<ThreadPool> = OnceLock::new();
-impl Drop for AsyncFile {
-    fn drop(&mut self) {
-    }
-}
 impl AsyncFile {
     pub fn from(file: File) -> Self {
         let len = match file.metadata() {
@@ -51,7 +49,7 @@ impl AsyncFile {
             let mut waker = self.waker.lock().unwrap();
             *waker = Some(cx.waker().clone());
             Poll::Pending
-        } else {
+        }else {
             *buf = std::mem::take(&mut inner_buf);
             Poll::Ready(Ok(buf.len()))
         }
@@ -90,7 +88,8 @@ pub struct AsyncTcpStream {
     token: Token,
     read_buf: Vec<u8>,
     event_manager: Arc<EventManager>,
-    registry: Registry
+    registry: Registry,
+    tls: Option<ServerConnection>
 }
 impl Drop for AsyncTcpStream {
     fn drop(&mut self) {
@@ -99,7 +98,13 @@ impl Drop for AsyncTcpStream {
 }
 impl AsyncTcpStream {
     fn new(stream: TcpStream, token: Token, event_manager:Arc<EventManager>, registry: Registry) -> Self {
-        Self { stream, token, read_buf: Vec::new(),  event_manager, registry }
+        Self {
+            stream, token,
+            read_buf: Vec::new(),
+            event_manager,
+            registry,
+            tls: None
+        }
     }
 
     pub fn peer_addr(&self) -> io::Result<SocketAddr> {
@@ -109,12 +114,26 @@ impl AsyncTcpStream {
     fn poll_load_buf(&mut self, cx:&mut Context) -> Poll<io::Result<usize>> {
         let mut chunk = [0u8; 4096];
 
-        match self.stream.read(&mut chunk) {
+        let read_result = match self.tls {
+            Some(ref mut tls) => {
+                match tls.read_tls(&mut self.stream) {
+                    Ok(_) => {
+                        tls.process_new_packets()
+                            .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
+                        tls.reader().read(&mut chunk)
+                    },
+                    Err(e) => Err(e)
+                }
+            }
+            None => self.stream.read(&mut chunk),
+        };
+
+        match read_result {
             Ok(n) => {
                 self.read_buf.extend_from_slice(&chunk[..n]);
                 Poll::Ready(Ok(n))
             },
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+            Err(e) if e.kind() == ErrorKind::WouldBlock => {
                 self.event_manager
                     .delegate( self.token, cx.waker().clone() );
                 Poll::Pending
@@ -150,16 +169,26 @@ impl AsyncTcpStream {
                 let line = self.read_buf.drain(..=lf).collect::<Vec<u8>>();
                 buf.push_str(&String::from_utf8_lossy(&line));
                 return Ok(line.len())
-            }else {
-                if 0 == self.load_buf().await? {return Ok(0)}
+            }else if 0 == self.load_buf().await? {
+                return Ok(0);
             }
         }
     }
 
     fn poll_write(&mut self, buf: &[u8], cx:&mut Context) -> Poll<io::Result<usize>> {
-        match self.stream.write(buf) {
+        let write_result = match self.tls {
+            Some(ref mut tls) => {
+                match tls.writer().write(buf) {
+                    Ok(_) => tls.write_tls(&mut self.stream),
+                    Err(e) => Err(e)
+                }
+            },
+            None =>self.stream.write(buf)
+        };
+
+        match write_result {
             Ok(n) => Poll::Ready(Ok(n)),
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+            Err(e) if e.kind() == ErrorKind::WouldBlock => {
                 self.registry.reregister(
                     &mut self.stream,
                     self.token,
@@ -167,7 +196,7 @@ impl AsyncTcpStream {
                 )?;
 
                 self.event_manager
-                    .delegate(self.token.clone(), cx.waker().clone());
+                    .delegate(self.token, cx.waker().clone());
                 Poll::Pending
             }
             Err(e) => Poll::Ready(Err(e)),
@@ -183,6 +212,35 @@ impl AsyncTcpStream {
             written += self.write(&data[written..]).await?
         }
         Ok(written)
+    }
+
+    pub async fn start_tls(&mut self, config:Arc<ServerConfig>) -> io::Result<()> {
+        let mut conn = match ServerConnection::new(config) {
+            Ok(c) => c,
+            Err(e) => return Err(Error::other(e)),
+        };
+
+        while conn.is_handshaking() {
+            if conn.wants_write() {
+                let mut buf = Vec::new();
+                conn.write_tls(&mut buf)
+                    .map_err(Error::other)?;
+                self.write_all(&buf).await?;
+            }
+            if conn.wants_read() {
+                loop {
+                    let n = self.load_buf().await?;
+                    if n < 4096 { break; }
+                }
+                let _n = conn.read_tls(&mut &self.read_buf[..])?;
+                self.read_buf.clear();
+                conn.process_new_packets()
+                    .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
+            }
+        }
+
+        self.tls = Some(conn);
+        Ok(())
     }
 }
 
@@ -208,9 +266,8 @@ impl EventManager {
 
             loop {
                 let mut poll = manager.poll.lock().unwrap();
-                if let Err(_e) = poll.poll(&mut event_queue, None) {
-                    // todo log error
-                    continue;
+                if let Err(_e) = poll.poll(&mut event_queue, None) { // block
+                    continue; // todo log error
                 }
                 drop(poll);
 
@@ -287,10 +344,9 @@ struct TaskWaker {
 }
 impl Wake for TaskWaker {
     fn wake(self: Arc<Self>) {
-        if let Some(task) = self.task.lock().unwrap().take() {
-            self.task_queue.push(task);
-        }else {
-            self.woken.store(true, Ordering::SeqCst);
+        match self.task.lock().unwrap().take() {
+            Some(task) => { self.task_queue.push(task); },
+            None => { self.woken.store(true, Ordering::SeqCst); }
         }
     }
 }
@@ -337,7 +393,7 @@ impl Worker {
                     task.as_mut().poll(&mut context)
                 })) {
                     Ok(Poll::Ready(Ok(()))) => {},
-                    Ok(Poll::Ready(Err(e))) => {/* todo log error */}
+                    Ok(Poll::Ready(Err(_e))) => {/* todo log error */}
                     Ok(Poll::Pending) => { task_waker.delegate(task); },
                     Err(_) => { /* !!! PANIC => catch unwind / log error */ }
                 };
@@ -380,7 +436,9 @@ pub struct Server<P: AsyncProtocol> {
     nio_pool: ThreadPool,
     max_nio_threads: usize,
     max_fio_threads: usize,
-    next_token: AtomicUsize
+    next_token: AtomicUsize,
+    config: Option<Arc<ServerConfig>>,
+    read_timeout: Option<Duration>,
 }
 pub(crate) type AsyncTask = Pin<Box<dyn Future<Output=io::Result<()>> + Send>>;
 impl<P: AsyncProtocol> Server<P> {
@@ -392,12 +450,22 @@ impl<P: AsyncProtocol> Server<P> {
             nio_pool: ThreadPool::new(),
             max_nio_threads: 1,
             max_fio_threads: 1,
-            next_token: AtomicUsize::new(0)
+            next_token: AtomicUsize::new(0),
+            config: None,
+            read_timeout: None,
         }
     }
 
     pub fn set_port(&mut self, port: u16, protocol: P) {
         self.port_mappings.insert(port, Arc::new(protocol));
+    }
+
+    pub fn set_config(&mut self, config: Arc<ServerConfig>) {
+        self.config = Some(config);
+    }
+
+    pub fn set_read_timeout(&mut self, read_timeout: Option<Duration>) {
+        self.read_timeout = read_timeout;
     }
 
     fn next_token(&self) -> Token {
@@ -417,8 +485,10 @@ impl<P: AsyncProtocol> Server<P> {
                     continue
                 },
             };
+            std_stream.set_read_timeout(self.read_timeout).unwrap();
             let mut stream = TcpStream::from_std(std_stream);
             println!("accepted connection");
+
             let token = self.next_token();
             let registry = event_registry.try_clone().unwrap();
 
@@ -477,7 +547,6 @@ impl<P: AsyncProtocol> Server<P> {
             let port_handle = thread::spawn(move || {
                 server_clone.listen_port(port_clone, registry_clone);
             });
-
             join_handles.push(port_handle);
         }
 

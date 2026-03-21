@@ -1,8 +1,15 @@
+use std::fs::File;
 use std::io;
-use crate::applications::async_web::http::{AsyncResult, HttpRequest, HttpResponse};
+use std::io::BufReader;
+use std::sync::Arc;
+use std::time::Duration;
+use rustls::pki_types::CertificateDer;
+use rustls::ServerConfig;
+use rustls_pemfile::{certs, private_key};
+use crate::applications::async_web::http::{HttpRequest, HttpResponse};
 use crate::applications::async_web::http::Method::GET;
 use crate::applications::async_web::protocol::Http;
-use crate::core::async_runtime::{AsyncProtocol, AsyncTcpStream, Server};
+use crate::core::async_runtime::{AsyncProtocol, Server};
 
 mod applications;
 mod core;
@@ -51,8 +58,24 @@ fn main() {
     prot.handle(GET, "/hello", handle_hello);
     prot.handle(GET, "/", handle_file);
     prot.handle(GET, "/error/*", handle_error);
-    
+
+    let cert_file = &mut BufReader::new(File::open("./cert/cert.pem").unwrap());
+    let key_file = &mut BufReader::new(File::open("./cert/key.pem").unwrap());
+
+    let certs: Vec<CertificateDer> = certs(cert_file).collect::<Result<_, _>>().unwrap();
+    let key = private_key(key_file).unwrap().unwrap();
+
+    let config = Arc::new(
+        ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(certs, key).unwrap()
+    );
+
+    prot.set_config(config);
+    prot.use_tls = true;
+
     let mut server:Server<Http> = Server::new();
-    server.set_port(8080, prot);
+    server.set_port(443, prot);
+    server.set_read_timeout(Some(Duration::from_millis(300)));
     server.start();
 }
