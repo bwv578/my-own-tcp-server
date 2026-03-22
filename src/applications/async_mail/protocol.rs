@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::mem::take;
 use rustls::ServerConfig;
 use crate::applications::async_mail::smtp::SmtpSession;
-use crate::core::async_runtime::{AsyncProtocol, AsyncTask, AsyncTcpStream};
+use crate::core::async_runtime::{AsyncConnectionFuture, AsyncProtocol, AsyncTask, AsyncTcpStream};
 
 pub struct Smtp {
     domain: String,
@@ -11,8 +11,9 @@ pub struct Smtp {
     post_handle: Box<dyn Fn(SmtpSession) -> AsyncTask + Send + Sync>,
 }
 impl AsyncProtocol for Smtp {
-    async fn handle_async_connection(&self, mut stream:AsyncTcpStream) -> io::Result<usize>
-    {
+
+    fn handle_async_connection(&self, mut stream:AsyncTcpStream) -> AsyncConnectionFuture<'_>
+    { Box::pin( async move {
         stream.write_all( format!("220 {} ESMTP ready\r\n", &self.domain).as_bytes() ).await?;
 
         let mut line_buf = String::new();
@@ -111,8 +112,7 @@ impl AsyncProtocol for Smtp {
 
         (self.post_handle)(session).await?;
         return Ok(1);
-    }
-
+    })}
 }
 
 impl Smtp {

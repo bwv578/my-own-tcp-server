@@ -19,9 +19,10 @@ use rustls::{ServerConfig, ServerConnection};
 
 
 pub trait AsyncProtocol: Send + Sync + 'static {
-    fn handle_async_connection(&self, stream: AsyncTcpStream) -> impl Future<Output = io::Result<usize>> + Send;
+    //fn handle_async_connection(&self, stream: AsyncTcpStream) -> impl Future<Output = io::Result<usize>> + Send;
+    fn handle_async_connection(&self, stream: AsyncTcpStream) -> AsyncConnectionFuture<'_>;
 }
-
+pub type AsyncConnectionFuture<'a> = Pin<Box<dyn Future<Output = io::Result<usize>> + Send + 'a>>;
 
 pub struct AsyncFile {
     file: Option<File>,
@@ -479,8 +480,8 @@ impl ThreadPool {
 }
 
 
-pub struct Server<P: AsyncProtocol> {
-    port_mappings:HashMap<u16, Arc<P>>,
+pub struct Server {
+    port_mappings:HashMap<u16, Arc<dyn AsyncProtocol>>,
     event_manager: Arc<EventManager>,
     nio_pool: ThreadPool,
     max_nio_threads: usize,
@@ -490,7 +491,7 @@ pub struct Server<P: AsyncProtocol> {
     read_timeout: Option<Duration>,
 }
 pub(crate) type AsyncTask = Pin<Box<dyn Future<Output=io::Result<()>> + Send>>;
-impl<P: AsyncProtocol> Server<P> {
+impl Server {
 
     pub fn new() -> Self {
         Self {
@@ -505,7 +506,7 @@ impl<P: AsyncProtocol> Server<P> {
         }
     }
 
-    pub fn set_port(&mut self, port: u16, protocol: P) {
+    pub fn set_port(&mut self, port: u16, protocol: impl AsyncProtocol) {
         self.port_mappings.insert(port, Arc::new(protocol));
     }
 

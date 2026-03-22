@@ -4,6 +4,7 @@ use std::io::ErrorKind;
 use std::sync::Arc;
 use rustls::ServerConfig;
 use serde_json::Value;
+use crate::core::async_runtime::AsyncConnectionFuture;
 use crate::applications::async_web::default::{BAD_REQUEST, NOT_FOUND};
 use crate::applications::async_web::http::{Action, HttpHandler, HttpRequest, HttpResponse, Method};
 use crate::core::async_runtime::{AsyncProtocol, AsyncTcpStream};
@@ -32,7 +33,8 @@ pub struct Http {
 }
 
 impl AsyncProtocol for Http {
-    async fn handle_async_connection(&self, mut stream: AsyncTcpStream) -> io::Result<usize> {
+    fn handle_async_connection(&self, mut stream: AsyncTcpStream) -> AsyncConnectionFuture<'_>
+    {Box::pin( async move {
         if self.use_tls {
             println!("Start TLS");
             stream.start_tls(Arc::clone(self.config.as_ref().unwrap())).await?;
@@ -96,8 +98,7 @@ impl AsyncProtocol for Http {
                 }
             }
         }
-
-    }
+    })}
 
 /*    fn set_config(&mut self, config: &Option<Arc<ServerConfig>>) {
         self.config = match *config {
