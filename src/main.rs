@@ -9,7 +9,7 @@ use rustls_pemfile::{certs, private_key};
 use crate::applications::async_web::http::{HttpRequest, HttpResponse};
 use crate::applications::async_web::http::Method::GET;
 use crate::applications::async_web::protocol::Http;
-use crate::core::async_runtime::{AsyncProtocol, Server};
+use crate::core::async_runtime::Server;
 
 mod applications;
 mod core;
@@ -38,7 +38,7 @@ fn main() {
     }
 
     let mut server:Server<TestProtocol> = Server::new();
-    server.set_port(8080, TestProtocol {});*/
+    server.set_port(8080, TestProtoc1ol {});*/
 
     async fn handle_hello(_req:HttpRequest, mut res:HttpResponse) -> io::Result<usize> {
         res.write("<h1>helllllloooodododododofoff</h1>").await
@@ -80,7 +80,7 @@ fn main() {
     prot.set_config(config);
     prot.use_tls = true;
 
-    let mut server:Server<Http> = Server::new();
+    let mut server = Server::new();
     server.set_port(443, prot);
     server.set_read_timeout(Some(Duration::from_millis(300)));
     server.start();
