@@ -57,14 +57,14 @@ impl AsyncProtocol for Http {
 
         let header:HashMap<String, String> = Self::parse_header(&mut stream).await;
 
-        let content_length:usize = match header.get("Content-Length") {
+        let content_length:usize = match header.get("content-length") {
             Some(content_length) => {
                 content_length.parse::<usize>().unwrap_or(0)
             }
             _ => 0
         };
 
-        let content_type:String = match header.get("Content-Type") {
+        let content_type:String = match header.get("content-type") {
             Some(content_type) => content_type.clone(),
             _ => String::from("text/plain")
         };
@@ -159,8 +159,15 @@ impl Http {
                 .map(|s| s.to_string())
                 .collect();
 
-            let key = kv.get(0).unwrap_or(&String::new()).trim().to_string();
-            let value = kv.get(1).unwrap_or(&String::new()).trim().to_string();
+            let key = kv.get(0)
+                .unwrap_or(&String::new())
+                .to_lowercase()
+                .trim().to_string();
+            let value = kv.get(1)
+                .unwrap_or(&String::new())
+                .to_lowercase()
+                .trim().to_string();
+
             header.insert(key, value);
         }
 
