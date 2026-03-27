@@ -165,7 +165,6 @@ impl Http {
                 .trim().to_string();
             let value = kv.get(1)
                 .unwrap_or(&String::new())
-                .to_lowercase()
                 .trim().to_string();
 
             header.insert(key, value);
