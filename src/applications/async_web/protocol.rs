@@ -95,8 +95,9 @@ impl AsyncProtocol for Http {
             stream, 200, HashMap::new()
         );
 
-        self.handle_aop(Phase::PreHandle, endpoint.clone().as_str(), &request, &mut response).await;
-
+        if !self.handle_aop(Phase::PreHandle, endpoint.clone().as_str(), &request, &mut response).await {
+            return Ok(1)
+        }
         let result = match self.handlers.get(&(method.clone(), endpoint.clone())) {
             Some(handler) => handler.execute(&request, &mut response).await,
             None => {
@@ -106,7 +107,6 @@ impl AsyncProtocol for Http {
                 }
             }
         };
-
         self.handle_aop(Phase::PostHandle, endpoint.as_str(), &request, &mut response).await;
         result
     })}

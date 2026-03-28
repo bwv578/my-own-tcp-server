@@ -46,7 +46,7 @@ fn main() {
     http::route(GET, "/logged/test2/*", handler!(_req, res, {
         res.write("<h1>O.O</h1>").await
     }));
-    
+
     http::filter(PreHandle, "/logged/*", handler!(req, _res, {
         println!("========== PRE HANDLE! ===========");
         println!("endpoint: {}", req.endpoint);
@@ -54,6 +54,10 @@ fn main() {
         println!("peer: {}", req.peer);
         println!("==================================");
         Ok(0)
+    }));
+
+    http::filter(PreHandle, "/logged/test2/stop", handler!(_req, res, {
+        res.write("<h1>STOP</h1>").await
     }));
 
     http::filter(PostHandle, "/logged/*", handler!(req, _res, {
