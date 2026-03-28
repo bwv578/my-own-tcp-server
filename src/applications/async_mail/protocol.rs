@@ -33,15 +33,12 @@ impl AsyncProtocol for Smtp {
                     },
                     "" => {
                         session.content.push('\n');
-                        session.is_content = true;
                     },
                     _ => {
-                        if session.is_content {
-                            session.content.push_str(
-                                line_buf.trim_end_matches( &['\r','\n'][..] )
-                            );
-                            session.content.push('\n');
-                        }
+                        session.content.push_str(
+                            line_buf.trim_end_matches( &['\r','\n'][..] )
+                        );
+                        session.content.push('\n');
                     }
                 }
 
