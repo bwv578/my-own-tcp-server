@@ -34,7 +34,7 @@ pub struct HttpRequest {
 impl HttpRequest {
     pub fn new(method: Method, endpoint:String, peer:SocketAddr, header:HashMap<String, String>,
                query_params: Value, body_params: Value) -> Self
-    { Self { method, endpoint, peer, header, query_params, body_params} }
+    { Self { method, endpoint, peer, header, query_params, body_params, } }
 }
 
 
@@ -43,12 +43,13 @@ pub struct HttpResponse {
     status:u16,
     header:HashMap<String, String>,
     accept_gzip:bool,
+    set_cookies: Vec<String>,
 }
 
 impl HttpResponse {
 
     pub fn new(stream:AsyncTcpStream, status:u16, header:HashMap<String, String>, accept_gzip:bool) -> Self {
-        Self { stream, status, header, accept_gzip }
+        Self { stream, status, header, accept_gzip, set_cookies: Vec::new() }
     }
 
     pub fn set_status(&mut self, status:u16) -> &mut Self {
@@ -63,6 +64,10 @@ impl HttpResponse {
         self.stream.write_all(status_msg.as_bytes()).await
     }
 
+    pub fn add_cookie(&mut self, cookie:&str) {
+        self.set_cookies.push(cookie.to_string());
+    }
+
     pub fn set_header(&mut self, key:&str, value:&str) -> &mut Self {
         self.header.insert(key.to_string(), value.to_string());
         self
@@ -74,6 +79,12 @@ impl HttpResponse {
             total += self.stream.write_all(
                 format!("{}:{}\r\n", k, v).as_bytes()
             ).await?;
+        }
+        for cookie in &self.set_cookies {
+            total += self.stream
+                .write_all(
+                    format!("Set-Cookie:{}\r\n", cookie).as_bytes()
+                ).await?;
         }
         total += self.stream.write_all(b"\r\n").await?;
         Ok(total)
