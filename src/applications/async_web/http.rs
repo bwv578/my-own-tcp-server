@@ -29,12 +29,13 @@ pub struct HttpRequest {
     pub header: HashMap<String, String>,
     pub query_params: Value,
     pub body_params: Value,
+    pub attributes: HashMap<String, Option<Value>>,
 }
 
 impl HttpRequest {
     pub fn new(method: Method, endpoint:String, peer:SocketAddr, header:HashMap<String, String>,
                query_params: Value, body_params: Value) -> Self
-    { Self { method, endpoint, peer, header, query_params, body_params, } }
+    { Self { method, endpoint, peer, header, query_params, body_params, attributes: HashMap::new() } }
 }
 
 

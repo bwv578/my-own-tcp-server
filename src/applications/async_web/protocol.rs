@@ -21,8 +21,16 @@ impl Handler {
         Self { method, endpoint:String::from(endpoint), action }
     }
 
-    async fn execute(&self, request:&HttpRequest, response:&mut HttpResponse) -> io::Result<usize> {
-        (*self.action)(request, response).await
+    async fn execute(&self, request:&mut HttpRequest, response:&mut HttpResponse) -> io::Result<usize> {
+        let result = (*self.action)(request, response).await;
+        match result {
+            Ok(n) => Ok(n),
+            Err(e) => {
+                response.set_status(500);
+                response.write_bytes(INTERNAL_SERVER_ERROR).await?;
+                Err(e)
+            }
+        }
     }
 }
 
@@ -42,7 +50,6 @@ impl AsyncProtocol for Http {
     fn handle_async_connection(&self, mut stream: AsyncTcpStream) -> AsyncConnectionFuture<'_>
     {Box::pin( async move {
         if self.use_tls {
-            println!("Start TLS");
             stream.start_tls(Arc::clone(self.config.as_ref().unwrap())).await?;
         }
 
@@ -54,8 +61,6 @@ impl AsyncProtocol for Http {
                 return stream.write_all(BAD_REQUEST).await;
             }
         };
-
-        println!("request_line: {:?}", request_line);
 
         if request_line.1.contains("..") {
             return stream.write_all(BAD_REQUEST).await;
@@ -90,7 +95,7 @@ impl AsyncProtocol for Http {
             .map(|v| v.contains("gzip"))
             .unwrap_or(false);
 
-        let request = HttpRequest::new (
+        let mut request = HttpRequest::new (
             method.clone(), endpoint.clone(),
             stream.peer_addr().unwrap(), header,
             query_params, body_params
@@ -99,19 +104,22 @@ impl AsyncProtocol for Http {
             stream, 200, HashMap::new(), accept_gzip
         );
 
-        if !self.handle_aop(Phase::PreHandle, endpoint.clone().as_str(), &request, &mut response).await {
+        if !self.handle_aop(Phase::PreHandle, endpoint.clone().as_str(), &mut request, &mut response).await {
             return Ok(1)
         }
         let result = match self.handlers.get(&(method.clone(), endpoint.clone())) {
-            Some(handler) => handler.execute(&request, &mut response).await,
+            Some(handler) => handler.execute(&mut request, &mut response).await,
             None => {
                 match self.search_wildcard(&method, endpoint.as_str()) {
-                    Some(wildcard_handler) => wildcard_handler.execute(&request, &mut response).await,
-                    None => response.write_bytes(NOT_FOUND).await
+                    Some(wildcard_handler) => wildcard_handler.execute(&mut request, &mut response).await,
+                    None => {
+                        response.set_status(404);
+                        response.write_bytes(NOT_FOUND).await
+                    }
                 }
             }
         };
-        self.handle_aop(Phase::PostHandle, endpoint.as_str(), &request, &mut response).await;
+        self.handle_aop(Phase::PostHandle, endpoint.as_str(), &mut request, &mut response).await;
         result
     })}
 
@@ -228,7 +236,7 @@ impl Http {
         None
     }
 
-    async fn handle_aop(&self, phase:Phase, endpoint:&str, request:&HttpRequest, response: &mut HttpResponse) -> bool {
+    async fn handle_aop(&self, phase:Phase, endpoint:&str, request:&mut HttpRequest, response: &mut HttpResponse) -> bool {
         let endpoint_vec = endpoint.split('/').collect::<Vec<&str>>();
         let mut search = String::new();
 
