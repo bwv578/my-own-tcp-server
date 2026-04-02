@@ -1,5 +1,5 @@
 use std::sync::{Mutex, MutexGuard, OnceLock};
-use crate::applications::async_web::http::{Action, HttpRequest, HttpResponse, Method};
+use crate::applications::async_web::http::{HttpFunction, Method};
 use crate::applications::async_web::protocol::{Http, Phase};
 
 static HTTP_MVC:OnceLock<Mutex<Option<Http>>> = OnceLock::new();
@@ -11,15 +11,15 @@ fn as_guard() -> MutexGuard<'static, Option<Http>> {
         .lock().unwrap()
 }
 
-pub fn route(method:Method, path:&str, action: Action) {
+pub fn route(method:Method, path:&str, function: Box<HttpFunction>) {
     as_guard().as_mut().unwrap()
-        .set_handler(method, path, action);
+        .set_handler(method, path, function);
 }
 
-pub fn filter(phase:Phase, pattern:&str, action: Action) {
+pub fn filter(phase:Phase, pattern:&str, function: Box<HttpFunction>) {
     match phase {
-        Phase::PreHandle => as_guard().as_mut().unwrap().set_pre_handler(pattern, action),
-        Phase::PostHandle => as_guard().as_mut().unwrap().set_post_handler(pattern, action),
+        Phase::PreHandle => as_guard().as_mut().unwrap().set_pre_handler(pattern, function),
+        Phase::PostHandle => as_guard().as_mut().unwrap().set_post_handler(pattern, function),
     }
 }
 

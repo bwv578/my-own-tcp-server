@@ -6,23 +6,23 @@ use rustls::ServerConfig;
 use serde_json::Value;
 use crate::core::async_runtime::AsyncConnectionFuture;
 use crate::applications::async_web::default::{BAD_REQUEST, INTERNAL_SERVER_ERROR, NOT_FOUND};
-use crate::applications::async_web::http::{Action, HttpHandler, HttpRequest, HttpResponse, Method};
+use crate::applications::async_web::http::{HttpFunction, HttpRequest, HttpResponse, Method};
 use crate::applications::async_web::http::Method::ANY;
 use crate::core::async_runtime::{AsyncProtocol, AsyncTcpStream};
 
 pub struct Handler {
     pub method: Method,
     pub endpoint: String,
-    action: Action,
+    function: Box<HttpFunction>,
 }
 
 impl Handler {
-    pub fn new(method: Method, endpoint:&str, action: Box<HttpHandler>) -> Self {
-        Self { method, endpoint:String::from(endpoint), action }
+    pub fn new(method: Method, endpoint:&str, function: Box<HttpFunction>) -> Self {
+        Self { method, endpoint:String::from(endpoint), function }
     }
 
     async fn execute(&self, request:&mut HttpRequest, response:&mut HttpResponse) -> io::Result<usize> {
-        let result = (*self.action)(request, response).await;
+        let result = (*self.function)(request, response).await;
         match result {
             Ok(n) => Ok(n),
             Err(e) => {
@@ -268,24 +268,24 @@ impl Http {
         true
     }
 
-    pub fn set_handler(&mut self, method: Method, endpoint:&str, action: Action) {
+    pub fn set_handler(&mut self, method: Method, endpoint:&str, function: Box<HttpFunction>) {
         self.handlers.insert(
             (method.clone(), endpoint.to_string().clone()),
-            Handler::new(method, endpoint, action)
+            Handler::new(method, endpoint, function)
         );
     }
 
-    pub fn set_pre_handler(&mut self, pattern:&str, action: Action) {
+    pub fn set_pre_handler(&mut self, pattern:&str, function: Box<HttpFunction>) {
         self.pre_handlers.insert(
             pattern.to_string().clone(),
-            Handler::new(ANY, pattern, action)
+            Handler::new(ANY, pattern, function)
         );
     }
 
-    pub fn set_post_handler(&mut self, pattern:&str, action: Action) {
+    pub fn set_post_handler(&mut self, pattern:&str, function: Box<HttpFunction>) {
         self.post_handlers.insert(
             pattern.to_string().clone(),
-            Handler::new(ANY, pattern, action)
+            Handler::new(ANY, pattern, function)
         );
     }
 }
