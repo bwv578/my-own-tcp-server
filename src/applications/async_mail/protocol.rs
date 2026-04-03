@@ -20,9 +20,13 @@ impl AsyncProtocol for Smtp {
         loop {
             println!("loop #1");
             line_buf.clear();
-            if stream.read_line(&mut line_buf).await? == 0 {
+            let line_read = stream.read_line(&mut line_buf).await?;
+            //if stream.read_line(&mut line_buf).await? == 0 {
+            if line_read == 0 {
                 break;
             }
+            println!("line read: {}", line_read);
+            println!("line content: {}", line_buf.to_string());
 
             if session.is_data {
                 match line_buf.trim_end_matches(&['\r','\n'][..]) {
