@@ -198,6 +198,7 @@ impl Http {
         let mut header: HashMap<String, String> = HashMap::new();
         let mut line_buf = String::new();
         loop {
+            println!("loop #2");
             line_buf.clear();
             let n = stream.read_line(&mut line_buf).await.unwrap_or(0);
             if n == 0 || line_buf.trim().is_empty() {

@@ -18,6 +18,7 @@ impl AsyncProtocol for Smtp {
         let mut session = SmtpSession::new();
 
         loop {
+            println!("loop #1");
             line_buf.clear();
             if stream.read_line(&mut line_buf).await? == 0 {
                 break;

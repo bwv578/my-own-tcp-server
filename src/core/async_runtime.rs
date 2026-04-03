@@ -221,6 +221,7 @@ impl AsyncTcpStream {
 
     pub async fn read_line(&mut self, buf: &mut String) -> io::Result<usize> {
         loop {
+            println!("loop #3");
             if let Some(lf) = self.read_buf.iter().position(|&b| b == b'\n') {
                 let line = self.read_buf.drain(..=lf).collect::<Vec<u8>>();
                 buf.push_str(&String::from_utf8_lossy(&line));
@@ -321,6 +322,7 @@ impl EventManager {
             let mut event_queue = manager.event_queue.lock().unwrap();
 
             loop {
+                println!("loop #4");
                 let mut poll = manager.poll.lock().unwrap();
                 if let Err(_e) = poll.poll(&mut event_queue, None) {
                     // block
@@ -437,6 +439,7 @@ impl Worker {
 
         thread::spawn(move || {
             loop {
+                println!("loop #5");
                 match std::panic::catch_unwind(AssertUnwindSafe(|| {
                     let mut task: AsyncTask = match queue.pop() {
                         Some(task) => task,
@@ -448,7 +451,7 @@ impl Worker {
                     match task.as_mut().poll(&mut context) {
                         Poll::Ready(_) => {}
                         Poll::Pending => {
-                            print!("task pending");
+                            println!("task pending");
                             task_waker.delegate(task);
                         }
                     }
@@ -542,6 +545,7 @@ impl Server {
         println!("listening on port {}", port);
 
         loop {
+            println!("loop #6");
             let (std_stream, peer) = match listener.accept() {
                 Ok((stream, peer)) => (stream, peer),
                 Err(e) => {
