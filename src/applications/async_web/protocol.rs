@@ -58,6 +58,7 @@ pub struct Http {
 impl AsyncProtocol for Http {
     fn handle_async_connection(&self, mut stream: AsyncTcpStream) -> AsyncConnectionFuture<'_> {
         Box::pin(async move {
+
             if self.use_tls {
                 stream
                     .start_tls(Arc::clone(self.config.as_ref().unwrap()))
@@ -117,17 +118,14 @@ impl AsyncProtocol for Http {
             );
             let mut response = HttpResponse::new(stream, 200, HashMap::new(), accept_gzip);
 
-            if !self
-                .handle_aop(
-                    Phase::PreHandle,
-                    endpoint.clone().as_str(),
-                    &mut request,
-                    &mut response,
-                )
-                .await
-            {
-                return Ok(1);
-            }
+            if !self.handle_aop(
+                Phase::PreHandle,
+                endpoint.clone().as_str(),
+                &mut request,
+                &mut response,
+            ).await
+            { return Ok(1); }
+
             let result = match self.handlers.get(&(method.clone(), endpoint.clone())) {
                 Some(handler) => handler.execute(&mut request, &mut response).await,
                 None => match self.search_wildcard(&method, endpoint.as_str()) {
@@ -185,9 +183,7 @@ impl Http {
             "OPTIONS" => Method::OPTIONS,
             "TRACE" => Method::TRACE,
             "CONNECT" => Method::CONNECT,
-            _ => {
-                return Err(io::Error::new(ErrorKind::Other, "unknown method"));
-            }
+            _ => { return Err(io::Error::new(ErrorKind::Other, "unknown method")); }
         };
 
         let queries: Vec<&str> = request[1].trim().split("?").collect();

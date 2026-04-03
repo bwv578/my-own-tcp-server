@@ -17,10 +17,14 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 use std::{io, thread};
 
+
 pub trait AsyncProtocol: Send + Sync + 'static {
     fn handle_async_connection(&self, stream: AsyncTcpStream) -> AsyncConnectionFuture<'_>;
 }
 pub type AsyncConnectionFuture<'a> = Pin<Box<dyn Future<Output = io::Result<usize>> + Send + 'a>>;
+
+
+static FIO_POOL: OnceLock<ThreadPool> = OnceLock::new();
 
 pub struct AsyncFile {
     file: Option<File>,
@@ -29,7 +33,6 @@ pub struct AsyncFile {
     written: Arc<AtomicBool>,
     waker: Arc<Mutex<Option<Waker>>>,
 }
-static FIO_POOL: OnceLock<ThreadPool> = OnceLock::new();
 impl AsyncFile {
     pub fn from(file: File) -> Self {
         let len = match file.metadata() {
@@ -123,6 +126,7 @@ impl AsyncFile {
         self.write().await
     }
 }
+
 
 pub struct AsyncTcpStream {
     stream: TcpStream,
@@ -433,25 +437,21 @@ impl Worker {
 
         thread::spawn(move || {
             loop {
-                let mut task: AsyncTask = match queue.pop() {
-                    Some(task) => task,
-                    None => {
-                        continue;
-                    }
-                };
-                let task_waker = Arc::new(TaskWaker::new(None, queue.clone()));
-                let waker = Waker::from(Arc::clone(&task_waker));
-                let mut context = Context::from_waker(&waker);
-
                 match std::panic::catch_unwind(AssertUnwindSafe(|| {
-                    task.as_mut().poll(&mut context)
-                })) {
-                    Ok(Poll::Ready(Ok(()))) => {}
-                    Ok(Poll::Ready(Err(_e))) => { /* todo log error */ }
-                    Ok(Poll::Pending) => {
-                        task_waker.delegate(task);
+                    let mut task: AsyncTask = match queue.pop() {
+                        Some(task) => task,
+                        None => return
+                    };
+                    let task_waker = Arc::new(TaskWaker::new(None, queue.clone()));
+                    let waker = Waker::from(Arc::clone(&task_waker));
+                    let mut context = Context::from_waker(&waker);
+                    match task.as_mut().poll(&mut context) {
+                        Poll::Ready(_) => {}
+                        Poll::Pending => { task_waker.delegate(task); }
                     }
-                    Err(_) => { /* !!! PANIC => catch unwind / log error */ }
+                })) {
+                    Ok(_) => {}
+                    Err(e) => { eprintln!("[NIO] task panicked: {:?}", e); }
                 };
             }
         });
