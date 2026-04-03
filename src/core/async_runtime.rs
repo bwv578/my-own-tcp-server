@@ -447,7 +447,10 @@ impl Worker {
                     let mut context = Context::from_waker(&waker);
                     match task.as_mut().poll(&mut context) {
                         Poll::Ready(_) => {}
-                        Poll::Pending => { task_waker.delegate(task); }
+                        Poll::Pending => {
+                            print!("task pending");
+                            task_waker.delegate(task);
+                        }
                     }
                 })) {
                     Ok(_) => {}

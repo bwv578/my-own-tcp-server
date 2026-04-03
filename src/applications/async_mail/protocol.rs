@@ -1,9 +1,7 @@
-use std::io;
 use std::sync::Arc;
-use std::mem::take;
 use rustls::ServerConfig;
 use crate::applications::async_mail::smtp::SmtpSession;
-use crate::core::async_runtime::{AsyncConnectionFuture, AsyncProtocol, AsyncTask, AsyncTcpStream};
+use crate::core::async_runtime::{AsyncConnectionFuture, AsyncProtocol, AsyncTcpStream};
 
 pub struct Smtp {
     domain: String,
@@ -109,6 +107,7 @@ impl AsyncProtocol for Smtp {
             }
         }
 
+        println!("session: {:#?}", session);
         (self.post_handle)(session).await
     })}
 }
