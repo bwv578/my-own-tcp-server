@@ -1,7 +1,8 @@
-use std::{future, sync::{Arc, Mutex}, task::{Context, Poll}};
+use std::{future, sync::{Arc, Mutex}, task::{Poll}};
+use tokio::runtime::Handle;
 
-pub fn tokio_bridge<F, T>(tokio_fut: F) -> impl Future<Output = T>
-where F: Future<Output = T> + Send + 'static,
+pub fn tokio_bridge<F, T>(tokio_handle:Handle, tokio_fut: F) -> impl Future<Output = T>
+where F: Future<Output = T> + Send + Sync + 'static,
     T: Send + 'static
 {
     let mut tf = Some(tokio_fut);
@@ -13,7 +14,7 @@ where F: Future<Output = T> + Send + 'static,
         if let Some(task) = tf.take() { // 최초 poll 시 => tokio 런타임에서 실행 => 실행 완료시 외부 cx.waker 깨움
             let result_clone = Arc::clone(&result);
 
-            tokio::spawn(async move {
+            tokio_handle.spawn(async move {
                 let tmp_result = Some(task.await);
                 let mut guard = result_clone.lock().unwrap();
                 *guard = tmp_result;
